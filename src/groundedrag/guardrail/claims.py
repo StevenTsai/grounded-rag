@@ -60,10 +60,12 @@ def classify_claim_type(text: str) -> str:
 
     覆盖优先级：negation > comparison > causal > indication > factual。
     - 命中否定/禁忌词 → negation（强制）
-    - 命中比较/方向/线次词 → comparison
+    - 命中比较/方向词 → comparison
     - 命中因果/机制词 → causal
     - 治疗建议句式 → 至少 indication
     - 无任何上述信号 → factual（纯事实型）
+
+    注意：线次定位词（一线/二线/三线/后线）**不是**比较信号，见 COMPARISON_WORDS 上方注释。
     """
     if not text:
         return TYPE_FACTUAL

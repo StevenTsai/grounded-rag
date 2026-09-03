@@ -49,7 +49,6 @@ _EVIDENCE_NEGATION = [
 ]
 # 正向推荐动词（主张为正例时才触发证据否定检查）
 _POSITIVE_VERBS = ["推荐", "建议使用", "使用", "治疗", "用药", "给予", "给药", "应用", "可用于", "适用于"]
-_DOSE_KIND_HINTS = ("mg", "ml", "用量", "剂量", "每日", "每天", "给药", "片", "粒")
 
 
 # ---------------------------------------------------------------------------
@@ -73,11 +72,6 @@ def _kind_of(text: str) -> str:
     if any(w in low for w in ("相关", "关联", "阳性", "表达", "突变", "标志物", "预后", "生存", "风险")):
         return "association"
     return "background"
-
-
-def _is_treatment_text(text: str) -> bool:
-    low = text.lower()
-    return any(w in low for w in ("推荐", "治疗", "使用", "用药", "给予", "给药", "适应证", "适应症", "应用"))
 
 
 def _claim_is_dose(text: str) -> bool:
@@ -408,6 +402,24 @@ class Verifier:
             text_span=f"{scope} {plans}".strip(),
         )
 
+    def _matching_rule_evs(
+        self, claim: AnswerClaim, rule_evs: Sequence[EvidenceId]
+    ) -> List[EvidenceId]:
+        """返回内容真正支持主张（过 0.75 高门槛表面比对）的规则侧证据。
+
+        与规则直出同一门槛（``max(0.75, element_ratio)``）——防「只复用规则条件域、
+        偷换药物」的挂靠包装：混合引用时，仅当主张确实复述了规则推荐内容，该规则的
+        等级才可参与充分性判定。
+        """
+        support = self.surface_support(claim, rule_evs)
+        if not support.get("passed"):
+            return []
+        ratio = float(support.get("ratio", 0.0))
+        if ratio < max(0.75, self.config.element_ratio):
+            return []
+        ids = set(support.get("support_ids") or [])
+        return [r for r in rule_evs if r.evidence_id in ids]
+
     def _fresh_for(self, ev: EvidenceId, kind: str) -> bool:
         """证据时效是否足以支撑该门槛。
 
@@ -504,9 +516,10 @@ class Verifier:
             verdict.message = "该条无引用或引用不完整（无证据/规则锚点）"
             return verdict
 
-        # 规则直出主张的规则侧证据（其内容即主张要匹配的"原文"）
+        # 被引规则的规则侧证据（其内容即主张要匹配的"权威原文"）。
+        # 不仅规则直出（rule_only）需要 —— 混合引用（证据+规则）时规则等级也参与充分性。
         rule_evs: List[EvidenceId] = []
-        if rule_only:
+        if claim.rule_refs:
             rule_evs = [
                 self._rule_evidence(m)
                 for m in matched_rules
@@ -575,6 +588,15 @@ class Verifier:
             anchored: List[EvidenceId] = [r for r in rule_evs if r.evidence_id in support_ids]
         else:
             anchored = [r for r in ev_refs if r.evidence_id in support_ids]
+            # 混合引用（证据+规则）：被引规则是显式权威来源，其等级应参与充分性判定；
+            # 但须先过「主张 vs 规则内容」的高门槛表面比对 —— 防止挂靠一条 A 级但
+            # 内容不符的规则凑门槛（内容不符的规则不进入充分性池，由证据等级单独决定）。
+            if rule_evs:
+                anchored_ids = {a.evidence_id for a in anchored}
+                for re_ in self._matching_rule_evs(claim, rule_evs):
+                    if re_.evidence_id not in anchored_ids:
+                        anchored.append(re_)
+                        anchored_ids.add(re_.evidence_id)
         # 治疗类主张（含规则直出）：先对**完整命中集**做按域分组的冲突裁定
         # （防止只对被引用子集仲裁而漏判"两条规则各被不同主张引用"的跨主张冲突），
         # 再要求主张引用的规则是胜出者，否则拒答。

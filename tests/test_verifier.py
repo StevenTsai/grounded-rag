@@ -378,6 +378,49 @@ class TestAntiCrossEvidenceStitch:
         assert "e-strong" not in v.evidence_used
 
 
+class TestMixedEvidenceRuleSufficiency:
+    """回归：混合引用（证据 + 规则）时，被引规则的等级参与充分性判定。
+
+    锚定修复把非规则直出主张的充分性池收窄为「锚定证据」，一度把被引规则的
+    等级也一并剔除 —— 导致"弱证据（D 级）供字面 + 权威 A 级规则背书"的好主张
+    被误拒为 insufficient_evidence。修复后：被引规则若**内容真正支持主张**
+    （过 0.75 高门槛），其等级重新进入充分性池；内容不符（只复用条件域、偷换药物）
+    的规则不得凑门槛。
+    """
+
+    def test_matching_rule_grade_counts(self):
+        verifier = Verifier()
+        weak = ev("e-weak", "肺癌三线EGFR复发患者推荐方案为奥希替尼。", grade="D")
+        rule_a = decision("r-a", ["奥希替尼"], grade="A")
+        c = claim(
+            "肺癌 三线 EGFR 推荐方案：奥希替尼",
+            evidence_refs=["e-weak"],
+            rule_refs=["r-a"],
+            critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry([weak]), [rule_a])
+        v = rep.verdicts[0]
+        assert v.status == PASS
+        assert "r-a" in v.evidence_used
+
+    def test_mismatched_rule_grade_cannot_prop(self):
+        # 规则推荐奥希替尼、主张却写吉非替尼 → 内容不符，A 级规则不进入充分性池
+        verifier = Verifier()
+        weak = ev("e-weak", "肺癌三线EGFR复发患者推荐方案为吉非替尼。", grade="D")
+        rule_a = decision("r-a", ["奥希替尼"], grade="A")
+        c = claim(
+            "肺癌 三线 EGFR 推荐方案：吉非替尼",
+            evidence_refs=["e-weak"],
+            rule_refs=["r-a"],
+            critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry([weak]), [rule_a])
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "insufficient_evidence"
+        assert "r-a" not in v.evidence_used
+
+
 class TestOverallStatus:
     def _good(self):
         return claim("奥希替尼属于三代EGFR-TKI药物", evidence_refs=["e1"])
