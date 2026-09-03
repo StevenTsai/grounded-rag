@@ -117,12 +117,68 @@ grounded-rag/
 └── docs/               # 指标口径 / 对照实验 / 架构设计
 ```
 
+## Roadmap
+
+### v1.1（2026 Q4）— 语义档增强
+
+- [ ] 接入 NLI 模型（deberta-mnli / bge-reranker）实现真实蕴含判定
+- [ ] 关系型主张（否定/比较/因果）从"拒答"升级为"语义校验通过"
+- [ ] 表面一致率 → 语义支持率指标升级
+- [ ] 可选语义档开关，兼容确定性档（医疗等高风险场景保留保守拒答策略）
+
+### v1.2（2027 Q1）— OncoKG 图谱证据链
+
+- [ ] 独立 `GraphProvider` 接口 + 图数据标准格式（节点/边 schema）
+- [ ] 知识图谱路径推理增强证据链路（实体-关系-实体多跳溯源）
+- [ ] 证据溯源从文档级升级为实体-关系级（`EvidenceId` 扩展 `entity_path` 字段）
+- [ ] 图谱可视化工具（证据链路交互式探索）
+
+### v1.3（2027 Q2）— 多 LLM 对齐验证
+
+- [ ] 多模型并行生成 + 主张级 consensus voting（3 模型各自生成 → 逐条投票 → 分歧标注）
+- [ ] 自洽性校验门（Self-Consistency Verifier）：同一问题多次采样 → 高方差主张降级
+- [ ] LLM-as-judge 可选增强（GPT-4 / Claude 作第三方裁判）
+
+### v2.0（2027 Q3）— 多领域泛化
+
+- [ ] 金融/法律/教育垂直领域适配（规则 DSL + 领域无关引擎）
+- [ ] 社区贡献的领域规则库生态（公开规则仓库 + 贡献者认证）
+- [ ] 领域插件系统（一键切换医疗/金融/法律规则集 + 词典 + 评测集）
+- [ ] 企业版：私有规则库托管 + 审计日志 + SSO
+
+### 长期愿景
+
+成为高风险垂直领域的「**可信 RAG 事实标准**」—— 让 LLM 在医疗/金融/法律等需要可溯源、
+可审计的场景下做到「**有据可依，无据可拒**」；沉淀一套"约束生成 + 声明级校验"的工程范式，
+推动 RAG 从"检索拼接"向"可信交付"演进。
+
+我们相信：**在高风险场景下，一个诚实拒答的 AI 比一个流畅编造的 AI 更有价值。**
+
+## 参考应用
+
+GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
+参考应用线上运行见 https://onco.ylkang.cn/（旧问答管线，未含声明级校验门）；本框架将校验门机制
+独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
+
 ## 合规与第三方依赖
 
 - 核心运行时仅依赖 **jieba**（MIT）；Gradio 仅存在于 `demo` extra。
 - 第三方许可证清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-- 贡献指南见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 贡献指南见 [CONTRIBUTING.md](CONTRIBUTING.md)（含 7 点合规清单 + 红线表）。
+
+## 社区
+
+- **GitHub 镜像**（规划中）: https://github.com/groundedrag/groundedrag
+- **Gitee 主仓库**: https://gitee.com/miniclaw27/grounded-rag
+- **反馈与讨论**: [Gitee Issues](https://gitee.com/miniclaw27/grounded-rag/issues)
+- **贡献者**: 见 [CONTRIBUTING.md](CONTRIBUTING.md)
+
+欢迎贡献代码、规则库、评测用例或新领域适配！特别欢迎：
+- 金融/法律领域的规则引擎适配
+- 多语言分词器支持（英文/日文/韩文）
+- 语义档 NLI 模型集成
+- 企业级部署案例
 
 ## License
 
-MIT © 2026 GroundedRAG Team。见 [LICENSE](LICENSE)。
+MIT © 2026 GroundedRAG Contributors。见 [LICENSE](LICENSE)。
