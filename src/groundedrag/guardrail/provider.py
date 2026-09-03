@@ -22,23 +22,23 @@ class RuleProvider(Protocol):
 
 
 class JsonRuleProvider:
-    """从 ``seed_rules.json`` 加载合成示例规则。"""
+    """从 ``seed_rules.json`` 加载合成示例规则。
+
+    构造时一次性读取并缓存 payload（load_pathway_rules / load_resistance_rules
+    各自消费同一份内存数据，避免同一文件被重复读两次）。
+    """
 
     def __init__(self, path: Union[str, Path]) -> None:
         self.path = Path(path)
-
-    def _load_payload(self) -> Dict[str, Any]:
         with open(self.path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            self._payload = json.load(f)
 
     def load_pathway_rules(self) -> List[Rule]:
-        payload = self._load_payload()
-        raw = payload.get("pathway_rules", payload.get("rules", []))
+        raw = self._payload.get("pathway_rules", self._payload.get("rules", []))
         return [Rule.from_dict(item) for item in raw]
 
     def load_resistance_rules(self) -> List[ResistanceRule]:
-        payload = self._load_payload()
-        raw = payload.get("resistance_rules", [])
+        raw = self._payload.get("resistance_rules", [])
         return [ResistanceRule.from_dict(item) for item in raw]
 
 

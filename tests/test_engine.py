@@ -131,12 +131,12 @@ class TestGuidelineEngine:
         assert ctx.get("biomarker") == "EGFR"
         assert ctx.get("treatment_line") == "一线"
 
-    def test_extract_context_cancer_only_when_biomarker_absent(self):
-        # 未提供 synonym_map 且候选仅覆盖首条规则时，启发式保守不硬配 biomarker
+    def test_extract_context_biomarker_from_any_rule(self):
+        # biomarker 候选词从全部规则收集（r2 域含 ALK），而非只看首条规则
         engine = _engine()
         ctx = engine.extract_context("晚期ALK阳性肺癌用什么？")
         assert ctx.get("cancer_type") == "肺癌"
-        assert "biomarker" not in ctx
+        assert ctx.get("biomarker") == "ALK"
 
     def test_sort_by_grade(self):
         low = RuleDecision_factory("low", "C")

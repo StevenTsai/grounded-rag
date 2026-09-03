@@ -34,100 +34,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
-from groundedrag.guardrail.claims import (
-    AnswerClaim,
-    parse_anchor_text,
-    parse_json_claims,
-)
+from groundedrag.eval.cases import load_eval_set, parse_case_claims
 from groundedrag.guardrail.verifier import ANNOTATE, PASS, REFUSE, VerifyReport
 from groundedrag.pipeline import Pipeline
-
-# expected 取值
-_EXPECTED = (PASS, REFUSE, ANNOTATE)
-
-
-def load_eval_set(path: Union[str, Path]) -> List[Dict[str, Any]]:
-    """读取 eval_set.jsonl → 用例 dict 列表（跳过空行/注释行）。"""
-    cases: List[Dict[str, Any]] = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            cases.append(json.loads(line))
-    return cases
-
-
-def _resolve_refs(refs: Sequence[Any], pool: Sequence[str]) -> List[str]:
-    """数字锚点 → 池中实际 id（与 claims 模块约定一致，1 起）。"""
-    out: List[str] = []
-    for r in refs:
-        s = str(r)
-        if s.isdigit():
-            idx = int(s) - 1
-            out.append(pool[idx] if 0 <= idx < len(pool) else s)
-        else:
-            out.append(s)
-    return out
-
-
-_ANCHOR_STRIP_RE = re.compile(r"\[(?:证据|规则|evidence|rule)\s*[:：]?\s*[0-9A-Za-z_-]+\]")
-
-
-def _parse_case_claim(
-    item: Any, *, evidence_ids: Sequence[str], rule_ids: Sequence[str]
-) -> List[AnswerClaim]:
-    """解析 eval 用例里的一条主张（支持 字符串带锚点 / dict 显式引用 / dict 文本带锚点）。
-
-    - dict 带 ``evidence_refs``/``rule_refs`` → 显式引用（数字锚点按证据池解析）；
-    - dict 仅带 ``text``（可含 ``[证据1]`` 文本锚点）→ 走与字符串一致的锚点解析。
-    """
-    if isinstance(item, dict):
-        raw_text = str(item.get("text", "")).strip()
-        has_explicit_refs = bool(
-            item.get("evidence_refs")
-            or item.get("evidence")
-            or item.get("rule_refs")
-            or item.get("rules")
-        )
-        if has_explicit_refs:
-            if not raw_text:
-                return []
-            text = _ANCHOR_STRIP_RE.sub("", raw_text).strip(" \t-•*")
-            claim = AnswerClaim(
-                text=text or raw_text,
-                evidence_refs=_resolve_refs(
-                    item.get("evidence_refs") or item.get("evidence") or [], evidence_ids
-                ),
-                rule_refs=_resolve_refs(
-                    item.get("rule_refs") or item.get("rules") or [], rule_ids
-                ),
-                critical=bool(item.get("critical", False)),
-            )
-            return [claim]
-        # 显式引用缺失 → 退化到文本锚点解析
-        item_text = raw_text
-    else:
-        item_text = str(item)
-    if not item_text.strip():
-        return []
-    return parse_claims_or_text(item_text, evidence_ids, rule_ids)
-
-
-def parse_claims_or_text(
-    text: str, evidence_ids: Sequence[str], rule_ids: Sequence[str]
-) -> List[AnswerClaim]:
-    """单条文本主张 → 主张列表（兼容 JSON 包裹与锚点行两种写法）。"""
-    if text.strip().startswith(("{", "[")):
-        parsed = parse_json_claims(text, evidence_ids=evidence_ids, rule_ids=rule_ids)
-        if parsed:
-            return parsed
-    return parse_anchor_text(text, evidence_ids=evidence_ids, rule_ids=rule_ids)
 
 
 @dataclass
@@ -297,16 +210,11 @@ def _run_case(
     ev_ids = info["evidence_ids"]
     rule_ids = info["rule_ids"]
 
-    # 逐条解析主张，并保留每条携带的 expected（仅 dict 形式可携带）
-    claim_items: List[AnswerClaim] = []
-    expected_of: Dict[int, str] = {}
-    for item in case.get("claims", []) or []:
-        parsed = _parse_case_claim(item, evidence_ids=ev_ids, rule_ids=rule_ids)
-        for c in parsed:
-            claim_items.append(c)
-            if isinstance(item, dict):
-                exp = str(item.get("expected", PASS))
-                expected_of[id(c)] = exp if exp in _EXPECTED else PASS
+    # 逐条解析主张，并保留每条携带的 expected（仅 dict 形式可携带；
+    # 解析与 demo/app 共用 eval.cases.parse_case_claims，避免三份漂移实现）
+    claim_items, expected_of = parse_case_claims(
+        case, evidence_ids=ev_ids, rule_ids=rule_ids
+    )
 
     report: VerifyReport = pipeline.verifier.verify(
         claim_items, info["registry"], matched

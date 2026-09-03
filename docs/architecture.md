@@ -187,16 +187,21 @@ result = PipelineResult(
 ```python
 def classify_claim_type(text: str) -> str:
     """确定性分类，优先级：negation > comparison > causal > indication > factual"""
-    if re.search(r"不|不可|禁忌|禁用|慎用|避免", text):
+    if re.search(r"不可|不能|不应|禁忌|禁用|慎用|避免|禁止", text):
         return "negation"
-    if re.search(r"优于|差于|一线|二线|首选|先用", text):
+    if re.search(r"优于|差于|劣于|首选|先用|替代|更优", text):
         return "comparison"
     if re.search(r"导致|激活|抑制|引起|由于", text):
         return "causal"
-    if re.search(r"推荐|使用|选择|考虑", text) and has_entity(text):
+    if re.search(r"推荐|建议使用|治疗|用药|适用|应用|方案为", text):
         return "indication"
     return "factual"
 ```
+
+> 注意：线次定位词（一线/二线/三线/后线）**不是**比较信号 —— 「X 为一线标准治疗」
+> 是可用证据表面要素核验（药物 + 线次词须出现在同一证据）的**定位主张**，交给
+> indication/表面一致性走，而非一律当"方向比较"拒答（旧实现把线次词列进比较词表，
+> 会误拒这类有据可查的好主张）。方向性比较（优于/首选/更优…）仍按 comparison 拒答。
 
 `AnswerClaim.from_dict()` 只对**非法** type 值重判，合法但失真的 type 保留待 verifier 覆盖。
 
@@ -315,7 +320,7 @@ bm25 = BM25(corpus, tokenizer=my_tokenizer)
 
 ## 测试策略
 
-- **单元测试**（187 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
+- **单元测试**（195 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
 - **端到端测试**：`test_pipeline.py`（规则直出 + 分歧拒答 + LLM 结构化）
 - **评测集回归**：`test_eval_runner.py`（三指标 ≥ 0.95）
 - **合规扫描**：`test_leak_scan.py`（专利草稿 / 凭据泄漏自检）

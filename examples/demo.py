@@ -21,17 +21,16 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from groundedrag.eval.cases import load_eval_set, parse_case_claims
 from groundedrag.guardrail import (
     ANNOTATE,
     PASS,
     REFUSE,
-    AnswerClaim,
     ClaimVerdict,
 )
 from groundedrag.llm import FailoverLLM, OpenAICompatibleLLM
@@ -100,14 +99,8 @@ def build_pipeline() -> Pipeline:
 
 
 def load_eval_cases() -> List[Dict[str, Any]]:
-    cases: List[Dict[str, Any]] = []
-    with open(EVAL_SET, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            cases.append(json.loads(line))
-    return cases
+    # 读取统一收口到 eval.cases（demo/app/runner 共用）
+    return load_eval_set(EVAL_SET)
 
 
 # ---------------------------------------------------------------------------
@@ -237,34 +230,22 @@ def show_eval_case(pipe: Pipeline, case: Dict[str, Any]) -> None:
         print(f"   用例说明：{note}")
 
     from groundedrag.guardrail import EvidenceRegistry
-    from groundedrag.guardrail.claims import parse_claims
 
     info = pipe.retrieve_and_match(
         question,
         context=case.get("context") or None,
         evidence_docs=case.get("evidence_docs") or None,
     )
-    ev_ids = info["evidence_ids"]
-    rule_ids = info["rule_ids"]
-    claims: List[AnswerClaim] = []
-    for item in case.get("claims", []) or []:
-        if isinstance(item, str):
-            claims.extend(
-                parse_claims(item, evidence_ids=ev_ids, rule_ids=rule_ids)
-            )
-        else:
-            # eval 集 dict 主张（refs 为字面 id）：走 from_dict，跳过 wrapper 结构
-            claims.append(AnswerClaim.from_dict(item))
-    # 保留 expected 供对照显示
-    expected = {
-        i: str(c.get("expected", ""))
-        for i, c in enumerate(case.get("claims", []))
-        if isinstance(c, dict) and c.get("expected")
-    }
+    # 主张解析（含 expected 保留）统一收口到 eval.cases，与 runner/app 一致
+    claims, expected_by_id = parse_case_claims(
+        case,
+        evidence_ids=info["evidence_ids"],
+        rule_ids=info["rule_ids"],
+    )
     registry = EvidenceRegistry(info["registry"].all())
     report = pipe.verifier.verify(claims, registry, info["matched"])
     for i, v in enumerate(report.verdicts, 1):
-        exp = expected.get(i - 1, "-")
+        exp = expected_by_id.get(id(v.claim), "-")
         ok = "✓" if (exp == "-" or exp == v.status) else "✗"
         lines = claim_card(v, i)
         lines[0] = f"{lines[0]}   期望={exp} {ok}"

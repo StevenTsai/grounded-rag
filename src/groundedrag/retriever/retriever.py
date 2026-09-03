@@ -106,7 +106,6 @@ class Retriever:
         self.expand_depth = expand_depth
         corpus = [d.search_text for d in self.documents]
         self._bm25 = BM25(corpus)
-        self._id_to_idx = {d.doc_id: i for i, d in enumerate(self.documents)}
 
     # -- 查询扩展 ----------------------------------------------------------
     def expand_query(self, tokens: List[str]) -> List[str]:

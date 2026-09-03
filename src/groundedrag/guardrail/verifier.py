@@ -251,43 +251,119 @@ class Verifier:
     def _evidence_tokens(self, span: str) -> set[str]:
         return {self._normalize_token(t) for t in surface_tokens(span)}
 
+    def _evidence_negates_claim(self, span: str, claim_toks: set[str]) -> bool:
+        """单条证据是否在语义上否定主张的实体。
+
+        判定：对主张每个实体 token 在证据里的出现位置，取最近的关系词
+        （否定词 / 正向动词）。若最近的是否定词 → 认为证据对该实体"禁用"。
+
+        这样处理临床里最常见的写法：证据同时写"不应使用 A，推荐使用 B"时，
+        B 附近的最近词是正向动词，不会被 A 的否定误伤（旧实现把整篇一票否决）。
+        """
+        low = (span or "").lower()
+        markers = []  # (index, kind)
+        for w in _EVIDENCE_NEGATION:
+            start = 0
+            while True:
+                i = low.find(w, start)
+                if i < 0:
+                    break
+                markers.append((i, "neg"))
+                start = i + 1
+        for w in _POSITIVE_VERBS:
+            start = 0
+            while True:
+                i = low.find(w, start)
+                if i < 0:
+                    break
+                markers.append((i, "pos"))
+                start = i + 1
+        if not markers:
+            return False
+        # 只考虑出现在主张实体附近的词（窗口），跨段落的否定不误伤
+        window = 24
+        for tok in claim_toks:
+            if any(ch.isdigit() for ch in tok):
+                continue  # 数值 token 不参与否定方向判定
+            start = 0
+            while True:
+                p = low.find(tok.lower(), start)
+                if p < 0:
+                    break
+                near = [(i, k) for i, k in markers if abs(i - p) <= window]
+                if near:
+                    nearest = min(near, key=lambda x: abs(x[0] - p))
+                    if nearest[1] == "neg":
+                        return True
+                start = p + 1
+        return False
+
     def surface_support(self, claim: AnswerClaim, evidences: Sequence[EvidenceId]) -> Dict[str, object]:
-        """确定性档表面要素一致性：主张要素是否出现在证据 text_span。"""
+        """确定性档表面要素一致性：主张要素是否出现在**同一条**证据 text_span。
+
+        关键不变量（防跨证据拼装）：
+        - 实体要素与数字必须落在**同一条**证据里才算通过 —— 不允许"实体来自文档 A、
+          数字来自文档 B、等级来自文档 C"的拼装；
+        - 数值 token（含数字）不计入实体比例，避免"80mg"这类 token 抬高命中比。
+        """
         claim_toks = {self._normalize_token(t) for t in surface_tokens(claim.text)}
         claim_nums = set(_extract_numbers(claim.text))
         if not claim_toks and not claim_nums:
             return {"passed": False, "ratio": 0.0, "reason": "no_surface_element"}
+        entity_toks = {t for t in claim_toks if not any(ch.isdigit() for ch in t)}
 
+        threshold = self.config.element_ratio
         best_ratio = 0.0
-        numbers_hit = False
+        num_ok_any = False
+        support_ids: List[str] = []
         for ev in evidences:
-            span_nums = set(_extract_numbers(ev.text_span))
-            if claim_nums and claim_nums.issubset(span_nums):
-                numbers_hit = True
             span_toks = self._evidence_tokens(ev.text_span)
-            if claim_toks:
-                hit = claim_toks & span_toks
-                best_ratio = max(best_ratio, len(hit) / len(claim_toks))
-        # 数值主张：若含数字则必须命中；实体按比例
-        passed = best_ratio >= self.config.element_ratio and (not claim_nums or numbers_hit)
-        reason = "surface_hit" if passed else (
-            "number_mismatch" if (claim_nums and not numbers_hit) else "entity_mismatch"
-        )
+            span_nums = set(_extract_numbers(ev.text_span))
+            num_ok = (not claim_nums) or claim_nums.issubset(span_nums)
+            if num_ok:
+                num_ok_any = True
+            if entity_toks:
+                hit = entity_toks & span_toks
+                ent_ratio = len(hit) / len(entity_toks)
+            else:
+                # 无实体要素（纯数字/背景主张）：数字命中视为表面通过
+                ent_ratio = 1.0 if num_ok else 0.0
+            best_ratio = max(best_ratio, ent_ratio)
+            if ent_ratio >= threshold and num_ok:
+                support_ids.append(ev.evidence_id)
 
-        # 证据侧表层否定检查：正向推荐主张，但绑定证据全部表达"不可/禁忌/禁用"
-        # → 这是"证据说不可用、主张说推荐 A"翻转的确定性拦截（仍是表面词级，
-        #   非 NLI；复杂嵌套语义仍由语义档覆盖）。
-        low = claim.text
-        positive = any(v in low for v in _POSITIVE_VERBS)
+        passed = bool(support_ids)
+        reason = ""
+        # 证据侧否定翻转：正向推荐主张，其**锚定证据**（提供表面命中的那几条）对其实体表达否定
+        positive = any(v in (claim.text or "") for v in _POSITIVE_VERBS)
+        negated = False
         if passed and positive:
-            evidence_negation_flags = [
-                any(w in (ev.text_span or "") for w in _EVIDENCE_NEGATION)
-                for ev in evidences
-            ]
-            if evidence_negation_flags and all(evidence_negation_flags):
+            anchored = [ev for ev in evidences if ev.evidence_id in support_ids]
+            negation_flags = [self._evidence_negates_claim(ev.text_span, entity_toks) for ev in anchored]
+            if anchored and negation_flags and all(negation_flags):
+                support_ids = []
                 passed = False
-                reason = "evidence_negates_claim"
-        return {"passed": passed, "ratio": round(best_ratio, 3), "reason": reason}
+                negated = True
+
+        if negated:
+            reason = "evidence_negates_claim"
+        elif not passed:
+            if claim_nums and not num_ok_any:
+                reason = "number_mismatch"
+            elif claim_nums:
+                reason = "number_mismatch"  # 数字命中了，但与实体不在同一条证据（跨证据拼装）
+            elif entity_toks:
+                reason = "entity_mismatch"
+            else:
+                reason = "no_surface_element"
+        else:
+            reason = "surface_hit"
+        return {
+            "passed": passed,
+            "ratio": round(best_ratio, 3),
+            "reason": reason,
+            "support_ids": support_ids,
+        }
 
     def _arbitrate_matched(
         self, decisions: Sequence[RuleDecision]
@@ -332,8 +408,26 @@ class Verifier:
             text_span=f"{scope} {plans}".strip(),
         )
 
+    def _fresh_for(self, ev: EvidenceId, kind: str) -> bool:
+        """证据时效是否足以支撑该门槛。
+
+        - dose / treatment：高门槛，要求有明确日期且未过期。**无 updated_at 不豁免**
+          （模块口径：缺失时间戳（即便有 source_version）按"未知时效"处理，
+          不视为新鲜 A 级证据）。
+        - association / background：低门槛，仅过期的不可用；未知时间可用。
+        """
+        if kind in ("dose", "treatment"):
+            if parse_iso_date(ev.updated_at) is None:
+                return False
+            return not self._policy.is_stale(ev)
+        return not self._policy.is_stale(ev)
+
     def _sufficient(self, verdict: ClaimVerdict, evidences: Sequence[EvidenceId]) -> bool:
-        """证据充分性门槛（设计文档 §3.4.3）。返回 False 表示证据不足→拒答/降级。"""
+        """证据充分性门槛（设计文档 §3.4.3）。返回 False 表示证据不足→拒答/降级。
+
+        ``evidences`` 是**已经通过表面一致性**的锚定证据（由调用方传入），
+        充分性只在该子集上判定 —— 不允许拿一条无关高等级证据"凑门槛"。
+        """
         text = verdict.claim.text
         kind = verdict.kind
         numbers = set(_extract_numbers(text))
@@ -341,11 +435,10 @@ class Verifier:
             rank = ev.grade_rank
             if rank < 0:
                 continue
-            stale = self._policy.is_stale(ev)
+            if not self._fresh_for(ev, kind):
+                continue
             if kind == "dose":
                 if _claim_is_dose(text) and numbers:
-                    if stale:
-                        continue
                     if rank >= GRADE_ORDER["C"] and numbers.intersection(_extract_numbers(ev.text_span)):
                         verdict.evidence_used.append(ev.evidence_id)
                         return True
@@ -353,15 +446,11 @@ class Verifier:
                     # 主张看起来是剂量但无数字：按低门槛不通过
                     continue
             elif kind == "treatment":
-                if stale or rank < GRADE_ORDER["B"]:
+                if rank < GRADE_ORDER["B"]:
                     continue
-                # 治疗建议须要素命中且来源为新（guideline/clinical_trial 强于 generic）
                 verdict.evidence_used.append(ev.evidence_id)
                 return True
             elif kind == "association":
-                if stale:
-                    # 过期的关联仍可作背景标注展示，不满足门槛则由上层降级
-                    continue
                 if rank >= GRADE_ORDER["D"]:
                     verdict.evidence_used.append(ev.evidence_id)
                     return True
@@ -461,15 +550,18 @@ class Verifier:
                     "passed": False,
                     "ratio": ratio,
                     "reason": "rule_content_mismatch",
+                    "support_ids": support.get("support_ids") or [],
                 }
             elif support.get("passed"):
                 support = {
                     "passed": True,
                     "ratio": ratio,
                     "reason": "rule_authoritative",
+                    "support_ids": support.get("support_ids") or [],
                 }
         else:
             support = self.surface_support(claim, ev_refs)
+        support_ids = support.get("support_ids") or []
         verdict.checks["claim_support"] = support
         if not support["passed"]:
             verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
@@ -477,15 +569,12 @@ class Verifier:
             verdict.message = "表面要素一致性不通过（实体/数值未出现在证据或所引规则中）"
             return verdict
 
-        # 5) 证据充分性门槛
-        pool: List[EvidenceId] = list(ev_refs)
-        # 规则绑定也作为证据源（等级/时效来源）
-        rule_evs = [
-            self._rule_evidence(m)
-            for m in matched_rules
-            if m.rule_id in claim.rule_refs
-        ]
-        pool.extend(rule_evs)
+        # 5) 证据充分性门槛 —— 只在**锚定该主张的证据**（通过表面一致的那几条）上判定，
+        #    不允许拿一条无关高等级证据"凑门槛"（跨证据拼装：弱文档供字面、强文档供等级）。
+        if rule_only:
+            anchored: List[EvidenceId] = [r for r in rule_evs if r.evidence_id in support_ids]
+        else:
+            anchored = [r for r in ev_refs if r.evidence_id in support_ids]
         # 治疗类主张（含规则直出）：先对**完整命中集**做按域分组的冲突裁定
         # （防止只对被引用子集仲裁而漏判"两条规则各被不同主张引用"的跨主张冲突），
         # 再要求主张引用的规则是胜出者，否则拒答。
@@ -495,19 +584,30 @@ class Verifier:
         if claim.rule_refs and verdict.kind == "treatment":
             winner_ids, arbitral_notes = self._arbitrate_matched(matched_rules)
             referenced = [m for m in matched_rules if m.rule_id in claim.rule_refs]
-            if referenced and any(m.rule_id not in winner_ids for m in referenced):
-                verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
-                verdict.reason = "rule_conflict_lost"
-                verdict.message = "主张引用的规则在冲突裁定中被淘汰"
-                return verdict
-            if referenced and not winner_ids and arbitral_notes:
-                # 分歧声明（无胜出者）
-                verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
-                verdict.reason = "rule_conflict_divergence"
-                verdict.message = "".join(arbitral_notes) or "两种推荐均存在，请结合临床判断"
-                return verdict
+            if referenced:
+                # ① 引用的规则本身已过期 → 直接判负（过期是硬性失效，不是"同级分歧"）
+                stale_lost = any(
+                    self._policy.is_stale(self._rule_evidence(m)) for m in referenced
+                )
+                if stale_lost:
+                    verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                    verdict.reason = "rule_conflict_lost"
+                    verdict.message = "主张引用的规则已过期，失去效力"
+                    return verdict
+                # ② 整组无胜出者（同级同时间互斥）→ 分歧声明，不静默二选一
+                if not winner_ids and arbitral_notes:
+                    verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                    verdict.reason = "rule_conflict_divergence"
+                    verdict.message = "".join(arbitral_notes) or "两种推荐均存在，请结合临床判断"
+                    return verdict
+                # ③ 有胜出者，但本主张引用的规则被淘汰（更低等级 / 更旧版本）
+                if any(m.rule_id not in winner_ids for m in referenced):
+                    verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                    verdict.reason = "rule_conflict_lost"
+                    verdict.message = "主张引用的规则在冲突裁定中被淘汰"
+                    return verdict
 
-        if not self._sufficient(verdict, pool):
+        if not self._sufficient(verdict, anchored):
             verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
             verdict.reason = "insufficient_evidence"
             verdict.message = "证据充分性不足（等级过低/已过期/数值不符）"

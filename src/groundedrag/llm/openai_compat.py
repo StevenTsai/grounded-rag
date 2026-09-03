@@ -28,8 +28,6 @@ class OpenAICompatibleLLM(LLMService):
         api_key_env: 未显式传 key 时读取的环境变量名
     """
 
-    name: str = "openai-compatible"
-
     def __init__(
         self,
         base_url: str,
@@ -49,6 +47,11 @@ class OpenAICompatibleLLM(LLMService):
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.extra_headers = headers or {}
+
+    @property
+    def name(self) -> str:
+        """对外名称为实际配置的模型名（供 used_llm / 界面标注，替代笼统的 openai-compatible）。"""
+        return self.model
 
     def is_available(self) -> bool:
         return bool(self.api_key)

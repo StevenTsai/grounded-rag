@@ -68,7 +68,7 @@ python -m groundedrag.eval.runner                  # 读 examples/ 默认三文�
 python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 ```
 
-内置可重复评测集 `examples/eval_set.jsonl`（20 组，含正例、数值幻觉、关系型反例、
+内置可重复评测集 `examples/eval_set.jsonl`（19 组 24 条，含正例、数值幻觉、关系型反例、
 证据侧否定翻转、类型自报绕过等），输出：
 
 | 指标 | 口径（README / docs 完整说明） |

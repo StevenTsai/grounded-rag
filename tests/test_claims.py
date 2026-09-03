@@ -25,7 +25,14 @@ class TestClassifyClaimType:
 
     def test_comparison(self):
         assert classify_claim_type("奥希替尼优于吉非替尼") == TYPE_COMPARISON
-        assert classify_claim_type("三线推荐安罗替尼") == TYPE_COMPARISON
+        assert classify_claim_type("一线方案先用奥希替尼") == TYPE_COMPARISON
+        assert classify_claim_type("三线首选安罗替尼") == TYPE_COMPARISON
+
+    def test_line_positioning_not_comparison(self):
+        # 线次定位（"一线/三线标准治疗"）是可用证据表面要素核验的定位主张，
+        # 不是方向性比较 → 交给表面核验，而非一律按 comparison 拒答（旧实现误拒）
+        assert classify_claim_type("三线推荐安罗替尼") == TYPE_INDICATION
+        assert classify_claim_type("奥希替尼为EGFR突变肺癌一线标准治疗") == TYPE_INDICATION
 
     def test_causal(self):
         assert classify_claim_type("EGFR突变激活下游信号通路") == TYPE_CAUSAL

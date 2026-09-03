@@ -18,7 +18,6 @@ from typing import List, Sequence
 
 try:  # jieba 为核心依赖，但保留回退以支持无网络/受限环境
     import jieba
-    import jieba.analyse  # noqa: F401
 
     _HAS_JIEBA = True
 except Exception:  # pragma: no cover - 回退路径仅在无 jieba 时触发

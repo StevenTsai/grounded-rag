@@ -194,7 +194,9 @@ class TestRuleDirectAndConflict:
         assert v.status == REFUSE
         assert v.reason == "rule_content_mismatch"
 
-    def test_conflict_loser_refuses(self):
+    def test_conflict_divergence_when_tied_refuses(self):
+        # 同域、同 grade、同时间的互斥规则 → 无胜出者 → 分歧声明（旧实现死代码，
+        # lost 分支先命中，分歧分支永远不可达 —— 修复为分歧优先于"逐条判负"）
         verifier = Verifier()
         rules = [
             decision("r-a", ["甲磺酸阿帕替尼"], grade="C", updated_at="2026-01-01"),
@@ -203,6 +205,22 @@ class TestRuleDirectAndConflict:
         c = claim(
             "肺癌 三线 EGFR 推荐方案：甲磺酸阿帕替尼",
             rule_refs=["r-a"], critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry(), rules)
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "rule_conflict_divergence"
+
+    def test_conflict_loser_refuses(self):
+        # 引用的规则在裁定中输给更高等级规则 → lost
+        verifier = Verifier()
+        rules = [
+            decision("r-a", ["甲磺酸阿帕替尼"], grade="A", updated_at="2026-01-01"),
+            decision("r-b", ["安罗替尼"], grade="C", updated_at="2026-01-01"),
+        ]
+        c = claim(
+            "肺癌 三线 EGFR 推荐方案：安罗替尼",
+            rule_refs=["r-b"], critical=True,
         )
         rep = verifier.verify([c], EvidenceRegistry(), rules)
         v = rep.verdicts[0]
@@ -277,6 +295,87 @@ class TestSufficiencyGate:
         v = rep.verdicts[0]
         assert v.status == ANNOTATE
         assert v.reason == "insufficient_evidence"
+
+    def test_missing_date_dose_refuses(self):
+        # 回归：dose/treatment 高门槛要求**可解析日期**——无 updated_at（未知时效）
+        # 不豁免，即使 grade=A。修复前缺失时间戳会被当作"未过期"而放行。
+        verifier = Verifier()
+        c = claim("推荐剂量为80mg每日一次", evidence_refs=["e1"], critical=True)
+        rep = verifier.verify(
+            [c],
+            EvidenceRegistry([ev("e1", "本品推荐剂量为80mg，每日口服一次。", updated_at=None)]),
+        )
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "insufficient_evidence"
+
+    def test_missing_date_treatment_refuses(self):
+        verifier = Verifier()
+        c = claim("肺癌一线推荐方案为阿帕替尼", evidence_refs=["e1"], critical=True)
+        rep = verifier.verify(
+            [c],
+            EvidenceRegistry(
+                [ev("e1", "肺癌一线患者推荐方案为阿帕替尼。", grade="A", updated_at=None)]
+            ),
+        )
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "insufficient_evidence"
+
+    def test_missing_date_association_passes_low_gate(self):
+        # 对照：低门槛（association/background）仅要求未过期；无日期=未知但未过期 → 仍通过
+        verifier = Verifier()
+        c = claim("该突变与PFS延长相关", evidence_refs=["e1"])
+        rep = verifier.verify(
+            [c],
+            EvidenceRegistry([ev("e1", "携带该突变的患者PFS显著延长。", updated_at=None)]),
+        )
+        assert rep.verdicts[0].status == PASS
+
+
+class TestAntiCrossEvidenceStitch:
+    """回归：防跨证据拼装（round-2 code review 修复项）。
+
+    旧实现表面门逐 token 全局取并集：实体命中一条证据、数值命中另一条证据也能
+    "拼装通过"；充分性又取全局证据里最高等级者凑门槛 —— 弱证据供字面、强证据
+    供等级。修复后：表面要素与数值必须落在**同一条**证据；充分性只在**锚定子集**
+    （surface 通过的那几条）上判定。
+    """
+
+    def test_number_and_entity_must_share_one_evidence(self):
+        # 药物实体只在 e-plan、剂量数值只在 e-dose → 谁都救不了对方 → number_mismatch
+        verifier = Verifier()
+        e_plan = ev("e-plan", "肺癌三线EGFR复发患者推荐方案为阿帕替尼。")
+        e_dose = ev("e-dose", "本品给药剂量为80mg每日一次，口服。")
+        c = claim(
+            "肺癌三线推荐方案为阿帕替尼，剂量80mg每日一次",
+            evidence_refs=["e-plan", "e-dose"],
+            critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry([e_plan, e_dose]))
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "number_mismatch"
+
+    def test_grade_stitch_irrelevant_high_grade_cannot_prop(self):
+        # 充分性只认锚定证据：弱证据（D 级）供字面，无关 A 级证据不能给它凑等级门槛
+        verifier = Verifier()
+        weak = ev("e-weak", "肺癌三线EGFR复发患者推荐方案为阿帕替尼。", grade="D")
+        strong = ev(
+            "e-strong",
+            "奥希替尼为三代EGFR-TKI，用于EGFR突变阳性晚期肺癌一线标准治疗。",
+            grade="A",
+        )
+        c = claim(
+            "肺癌三线推荐方案为阿帕替尼",
+            evidence_refs=["e-weak", "e-strong"],
+            critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry([weak, strong]))
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "insufficient_evidence"
+        assert "e-strong" not in v.evidence_used
 
 
 class TestOverallStatus:
