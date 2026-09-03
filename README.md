@@ -1,5 +1,12 @@
 # GroundedRAG
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
+[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
+[![CI](https://github.com/groundedrag/groundedrag/actions/workflows/ci.yml/badge.svg)](https://github.com/groundedrag/groundedrag/actions)
+
 **轻量开源 RAG 框架** —— 以「声明级校验门（claim-level verifier）」可复现地减少无证据输出，
 让 LLM 回答做到「**有据可依，无据可拒**」。
 
@@ -77,20 +84,29 @@ python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 | **表面一致率** | 期望通过的主张中，最终状态为 pass 的占比（好主张没有被误拒） |
 | **拒答正确率** | 期望拒答的主张中，校验门确实给出 refuse 的占比（**防幻觉关键指标**） |
 
-对照实验（GroundedRAG vs 裸 prompt RAG）说明见 [docs/comparison.md](docs/comparison.md)。
+内置评测集期望分布：**24 条主张 = 10 通过 + 12 拒答 + 2 标注**。当前实测三项指标均为 1.0，
+即 12 条幻觉高危主张全部拦截、10 条好主张零误伤、2 条标注零误判。
+
+| 对照（同一批幻觉高危题） | 裸 prompt RAG | GroundedRAG |
+|------|------|------|
+| 拒答正确率（幻觉拦截） | ≈ 0（有资料就直出，从不拒答） | **1.0**（12/12 全部拦截） |
+| 误拒（好主张被拦） | —（无拒答概念） | 0（10/10 通过） |
+| 引用锚点 / 可溯源 | 无 | 每条主张 `[证据n]` / `[规则n]` + `EvidenceId` |
+
+> 数值由 `python -m groundedrag.eval.runner --json` 实测生成，随评测集演化同步更新。
+> 完整对照方法论、典型案例与诚实边界见 [docs/comparison.md](docs/comparison.md)。
 
 ## 架构
 
+![GroundedRAG 三层架构图](docs/architecture.svg)
+
 ```
-┌────────────────────────── pipeline.py ─────────────────────────┐
-│  编排：检索 → 规则匹配 → 受约束生成 → 声明解析 → 校验门 → 降级/拒答 │
-├───────────────┬───────────────────────┬────────────────────────┤
-│   retriever/   │      guardrail/ ★      │          llm/          │
-│  BM25 检索      │  规则引擎 RuleDecision │   策略基类 + 多模型降级  │
-│  实体增强       │  证据溯源 EvidenceId   │   OpenAI 兼容客户端     │
-│  查询扩展       │  声明解析 AnswerClaim  │   模板回退（无据拒答文案）│
-│  (词典可注入)    │  ★声明级校验门 verifier│                        │
-└───────────────┴───────────────────────┴────────────────────────┘
+pipeline.py 编排：检索 → 规则匹配 → 受约束生成 → 声明解析 → 校验门 → 降级/拒答
+   retriever/            guardrail/ ★              llm/
+  BM25 检索             规则引擎 RuleDecision      策略基类 + 多模型降级
+  实体增强              证据溯源 EvidenceId       OpenAI 兼容客户端
+  查询扩展              声明解析 AnswerClaim      模板回退（无据拒答文案）
+  (词典可注入)           ★声明级校验门 verifier
 ```
 
 - `retriever/`：BM25（jieba 分词；缺失时回退 **CJK char-bigram**，绝不回退 `split()`）+
