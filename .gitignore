@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 依赖清单生成物
+third_party_licenses.txt
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+
+# 运行时数据（不含合成种子数据，种子数据位于 examples/）
+*.log
+
+# 开源合规：私有词表本地维护，不入库（模板见 .leak_markers.example.json）
+.leak_markers.json

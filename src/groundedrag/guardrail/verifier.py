@@ -1,0 +1,559 @@
+"""★声明级校验门（guardrail/verifier.py）。
+
+回答生成后不是直接返回，而是逐条经过本模块：**引用完整性 / 主张-证据一致性 /
+规则冲突 / 证据充分性** 四项校验（对应设计文档 §3.4）。全部为纯逻辑判定，
+零 LLM 依赖，可直接被单测覆盖。
+
+能力边界（对外口径）：
+- 确定性档只做**表面要素一致性**（实体/数值/单位是否出现在证据 text_span），
+  不做"真实支持"判定；否定/比较/因果等关系型主张在语义档关闭时一律拒答或标注。
+- 语义档（NLI/LLM 蕴含）为可选增强，启用时输出标注「语义核验」，不静默混入。
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Protocol, Sequence
+
+from groundedrag.guardrail.claims import (
+    TYPE_CAUSAL,
+    TYPE_COMPARISON,
+    TYPE_FACTUAL,
+    TYPE_NEGATION,
+    AnswerClaim,
+    classify_claim_type,
+    is_critical_claim,
+    surface_tokens,
+)
+from groundedrag.guardrail.evidence import (
+    EvidenceId,
+    EvidenceRegistry,
+    StalenessPolicy,
+    parse_iso_date,
+)
+from groundedrag.guardrail.models import GRADE_ORDER, RuleDecision
+
+# 判定状态
+PASS = "pass"
+REFUSE = "refuse"          # 拒答（关键主张失败或无法验证）
+ANNOTATE = "annotate"      # 标注降级（非关键主张，展示时附"未经本地证据核验"）
+
+# 数字/剂量模式：剂量主张要求证据 span 内含同一数值
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+_DOSE_RE = re.compile(r"\d+(?:\.\d+)?\s*(mg|ml|g|片|粒|支|天|日|周|次|疗程|月|年)")
+# 证据侧表层否定信号（用于"证据说不可用、主张说推荐 A"这类翻转的确定性拦截）
+_EVIDENCE_NEGATION = [
+    "不可", "不能", "不应", "不推荐", "不建议", "禁忌", "禁用", "慎用",
+    "避免", "禁止", "切勿", "不得", "不作为", "不使用",
+]
+# 正向推荐动词（主张为正例时才触发证据否定检查）
+_POSITIVE_VERBS = ["推荐", "建议使用", "使用", "治疗", "用药", "给予", "给药", "应用", "可用于", "适用于"]
+_DOSE_KIND_HINTS = ("mg", "ml", "用量", "剂量", "每日", "每天", "给药", "片", "粒")
+
+
+# ---------------------------------------------------------------------------
+# 语义档（可选增强）接口
+# ---------------------------------------------------------------------------
+class SemanticSupportVerifier(Protocol):
+    """语义档校验器：判定主张是否被证据真实支持（NLI/LLM 蕴含）。"""
+
+    def check(self, claim: AnswerClaim, evidences: Sequence[EvidenceId]) -> Optional[bool]:
+        """返回 True=支持 / False=不支持 / None=无法判定（弃权）。"""
+        ...
+
+
+def _kind_of(text: str) -> str:
+    """主张"子类型"（治疗/剂量/关联/背景），供充分性门槛使用。"""
+    low = text.lower()
+    if _DOSE_RE.search(text) or any(h in low for h in ("剂量", "用量", "每日", "给药", "mg")):
+        return "dose"
+    if any(w in low for w in ("推荐", "治疗", "使用", "用药", "给予", "给药", "方案为", "适应证", "适应症", "应用")):
+        return "treatment"
+    if any(w in low for w in ("相关", "关联", "阳性", "表达", "突变", "标志物", "预后", "生存", "风险")):
+        return "association"
+    return "background"
+
+
+def _is_treatment_text(text: str) -> bool:
+    low = text.lower()
+    return any(w in low for w in ("推荐", "治疗", "使用", "用药", "给予", "给药", "适应证", "适应症", "应用"))
+
+
+def _claim_is_dose(text: str) -> bool:
+    return _DOSE_RE.search(text) is not None
+
+
+def _extract_numbers(text: str) -> List[str]:
+    return [m.group() for m in _NUMBER_RE.finditer(text)]
+
+
+@dataclass
+class ClaimVerdict:
+    """单条主张的校验结果。"""
+
+    claim: AnswerClaim
+    status: str = ANNOTATE
+    reason: str = ""
+    message: str = ""
+    overridden_type: str = TYPE_FACTUAL
+    kind: str = "background"
+    effective_critical: bool = False
+    checks: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    evidence_used: List[str] = field(default_factory=list)
+    semantic_used: bool = False
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "text": self.claim.text,
+            "status": self.status,
+            "reason": self.reason,
+            "message": self.message,
+            "overridden_type": self.overridden_type,
+            "kind": self.kind,
+            "critical": self.effective_critical,
+            "checks": self.checks,
+            "evidence_used": self.evidence_used,
+            "semantic_used": self.semantic_used,
+        }
+
+
+@dataclass
+class VerifyReport:
+    """一次回答的整体验证报告。"""
+
+    verdicts: List[ClaimVerdict] = field(default_factory=list)
+    overall_status: str = PASS
+    overall_reason: str = ""
+    matched_rules: List[RuleDecision] = field(default_factory=list)
+    message: str = ""
+
+    @property
+    def any_refused(self) -> bool:
+        return any(v.status == REFUSE for v in self.verdicts)
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "overall_status": self.overall_status,
+            "overall_reason": self.overall_reason,
+            "message": self.message,
+            "claim_verdicts": [v.to_dict() for v in self.verdicts],
+            "matched_rules": [r.to_dict() for r in self.matched_rules],
+        }
+
+
+@dataclass
+class VerifierConfig:
+    """校验门配置。"""
+
+    element_ratio: float = 0.5            # 表面要素命中比例阈值（0~1）
+    semantic_enabled: bool = False
+    staleness_years: Optional[Dict[str, int]] = None
+    semantic_verifier: Optional[SemanticSupportVerifier] = None
+    synonym_map: Optional[Dict[str, List[str]]] = None  # 别名归一（可选，用于要素比对）
+
+    def staleness(self) -> StalenessPolicy:
+        return StalenessPolicy(years=self.staleness_years)
+
+
+# ---------------------------------------------------------------------------
+# 规则冲突裁定
+# ---------------------------------------------------------------------------
+def _rules_conflict(a: RuleDecision, b: RuleDecision) -> bool:
+    """两条命中规则是否冲突（设计文档 §3.4.3 可编码定义）。
+
+    当且仅当同时满足：① 同条件域（癌种+线次+标志物/基因）；② 主推方案集合互斥
+    （组件集合不相交）；③ 两者均非 stale（stale 过滤在裁定前完成，此处仅判定域与方案）。
+    """
+    same_domain = (
+        (a.cancer_type == b.cancer_type or a.cancer_type is None or b.cancer_type is None)
+        and (a.treatment_line == b.treatment_line or a.treatment_line is None or b.treatment_line is None)
+        and (a.biomarker == b.biomarker or a.biomarker is None or b.biomarker is None)
+    )
+    if not same_domain:
+        return False
+    pa = set(a.plan_components)
+    pb = set(b.plan_components)
+    if not pa or not pb:
+        return False
+    return pa.isdisjoint(pb)  # 互斥 = 组件集合不相交
+
+
+def arbitrate_conflict(
+    decisions: Sequence[RuleDecision],
+    policy: StalenessPolicy,
+    now=None,
+) -> tuple[List[RuleDecision], List[str]]:
+    """冲突裁定：过滤 stale → 最高 grade → 最新 updated_at → 声明分歧。
+
+    返回 (胜出者列表, 说明列表)。胜出者为空表示"声明分歧，不静默二选一"。
+    """
+    # 仅对存在实际冲突对的集合进行裁定
+    notes: List[str] = []
+    pool = list(decisions)
+    # 1) 过滤 stale：规则视为 guideline 类时效
+    fresh: List[RuleDecision] = []
+    for d in pool:
+        ev = EvidenceId(
+            evidence_id=d.rule_id,
+            doc_id=d.rule_id,
+            source_type="guideline",
+            source_version=d.source_version,
+            grade=d.max_grade,
+            updated_at=d.updated_at,
+            text_span="",
+        )
+        if not policy.is_stale(ev):
+            fresh.append(d)
+    if len(fresh) < len(pool):
+        notes.append(f"已过滤 {len(pool) - len(fresh)} 条过期规则")
+    if not fresh:
+        return [], notes + ["全部命中规则已过期，无有效规则"]
+    # 2) 按最高 grade
+    best_grade = max(GRADE_ORDER.get(d.max_grade, 0) for d in fresh)
+    graded = [d for d in fresh if GRADE_ORDER.get(d.max_grade, 0) == best_grade]
+    # 3) grade 相同 → 最新 updated_at（缺失视为未知，排在有时间戳者之后）
+    def _ts(d: RuleDecision) -> tuple[int, int]:
+        dt = parse_iso_date(d.updated_at)
+        if dt is None:
+            return (0, 0)
+        return (1, dt.toordinal())
+
+    graded.sort(key=_ts, reverse=True)
+    newest_ts = _ts(graded[0])
+    newest = [d for d in graded if _ts(d) == newest_ts]
+    # 4) 仍无法裁决且内容矛盾 → 声明分歧
+    if len(newest) > 1 and any(_rules_conflict(newest[0], x) for x in newest[1:]):
+        return [], notes + ["两种推荐均存在且等级/时间相同，请结合临床判断（分歧声明）"]
+    return newest, notes
+
+
+# ---------------------------------------------------------------------------
+# 校验门主体
+# ---------------------------------------------------------------------------
+class Verifier:
+    """声明级校验门：逐条验证 AnswerClaim。"""
+
+    def __init__(self, config: Optional[VerifierConfig] = None) -> None:
+        self.config = config or VerifierConfig()
+        self._policy = self.config.staleness()
+
+    # -- 要素一致（确定性档） ----------------------------------------------
+    def _normalize_token(self, tok: str) -> str:
+        """可选别名归一（同义词词典注入）。"""
+        if not self.config.synonym_map:
+            return tok
+        for canonical, aliases in self.config.synonym_map.items():
+            if tok in aliases:
+                return canonical
+        return tok
+
+    def _evidence_tokens(self, span: str) -> set[str]:
+        return {self._normalize_token(t) for t in surface_tokens(span)}
+
+    def surface_support(self, claim: AnswerClaim, evidences: Sequence[EvidenceId]) -> Dict[str, object]:
+        """确定性档表面要素一致性：主张要素是否出现在证据 text_span。"""
+        claim_toks = {self._normalize_token(t) for t in surface_tokens(claim.text)}
+        claim_nums = set(_extract_numbers(claim.text))
+        if not claim_toks and not claim_nums:
+            return {"passed": False, "ratio": 0.0, "reason": "no_surface_element"}
+
+        best_ratio = 0.0
+        numbers_hit = False
+        for ev in evidences:
+            span_nums = set(_extract_numbers(ev.text_span))
+            if claim_nums and claim_nums.issubset(span_nums):
+                numbers_hit = True
+            span_toks = self._evidence_tokens(ev.text_span)
+            if claim_toks:
+                hit = claim_toks & span_toks
+                best_ratio = max(best_ratio, len(hit) / len(claim_toks))
+        # 数值主张：若含数字则必须命中；实体按比例
+        passed = best_ratio >= self.config.element_ratio and (not claim_nums or numbers_hit)
+        reason = "surface_hit" if passed else (
+            "number_mismatch" if (claim_nums and not numbers_hit) else "entity_mismatch"
+        )
+
+        # 证据侧表层否定检查：正向推荐主张，但绑定证据全部表达"不可/禁忌/禁用"
+        # → 这是"证据说不可用、主张说推荐 A"翻转的确定性拦截（仍是表面词级，
+        #   非 NLI；复杂嵌套语义仍由语义档覆盖）。
+        low = claim.text
+        positive = any(v in low for v in _POSITIVE_VERBS)
+        if passed and positive:
+            evidence_negation_flags = [
+                any(w in (ev.text_span or "") for w in _EVIDENCE_NEGATION)
+                for ev in evidences
+            ]
+            if evidence_negation_flags and all(evidence_negation_flags):
+                passed = False
+                reason = "evidence_negates_claim"
+        return {"passed": passed, "ratio": round(best_ratio, 3), "reason": reason}
+
+    def _arbitrate_matched(
+        self, decisions: Sequence[RuleDecision]
+    ) -> tuple[set[str], List[str]]:
+        """按条件域分组做冲突裁定，返回 (全局胜出 rule_id 集合, 说明列表)。
+
+        同一问答上下文可能命中多条不同域（癌种/线次/标志物）规则，它们彼此
+        不构成冲突；冲突只可能发生在**同域**规则之间（§3.4.3）。因此先按
+        (cancer_type, treatment_line, biomarker) 分组，组内各自仲裁，
+        再把各组的胜出者并入全局集合。任一组出现分歧（无胜出者）会在说明里标注。
+        """
+        groups: Dict[tuple, List[RuleDecision]] = {}
+        for d in decisions:
+            key = (d.cancer_type, d.treatment_line, d.biomarker)
+            groups.setdefault(key, []).append(d)
+        winner_ids: set[str] = set()
+        notes: List[str] = []
+        for group in groups.values():
+            winners, ns = arbitrate_conflict(group, self._policy)
+            notes.extend(ns)
+            winner_ids.update(w.rule_id for w in winners)
+        return winner_ids, notes
+
+    def _rule_evidence(self, d: RuleDecision) -> EvidenceId:
+        """把规则决策临时归一为 EvidenceId，供时效/等级判定与规则直出比对复用。
+
+        ``text_span`` 拼接规则的条件域（癌种/线次/标志物）与推荐方案 ——
+        规则直出主张（如「肺癌 一线 EGFR 推荐方案：奥希替尼」）的表面比对
+        以该 span 为"权威原文"。
+        """
+        plans = " / ".join(rec.plan_name for rec in d.recommendations)
+        scope = " ".join(
+            x for x in (d.cancer_type or "", d.treatment_line or "", d.biomarker or "") if x
+        )
+        return EvidenceId(
+            evidence_id=d.rule_id,
+            doc_id=d.rule_id,
+            source_type="guideline",
+            source_version=d.source_version,
+            grade=d.max_grade,
+            updated_at=d.updated_at,
+            text_span=f"{scope} {plans}".strip(),
+        )
+
+    def _sufficient(self, verdict: ClaimVerdict, evidences: Sequence[EvidenceId]) -> bool:
+        """证据充分性门槛（设计文档 §3.4.3）。返回 False 表示证据不足→拒答/降级。"""
+        text = verdict.claim.text
+        kind = verdict.kind
+        numbers = set(_extract_numbers(text))
+        for ev in evidences:
+            rank = ev.grade_rank
+            if rank < 0:
+                continue
+            stale = self._policy.is_stale(ev)
+            if kind == "dose":
+                if _claim_is_dose(text) and numbers:
+                    if stale:
+                        continue
+                    if rank >= GRADE_ORDER["C"] and numbers.intersection(_extract_numbers(ev.text_span)):
+                        verdict.evidence_used.append(ev.evidence_id)
+                        return True
+                else:
+                    # 主张看起来是剂量但无数字：按低门槛不通过
+                    continue
+            elif kind == "treatment":
+                if stale or rank < GRADE_ORDER["B"]:
+                    continue
+                # 治疗建议须要素命中且来源为新（guideline/clinical_trial 强于 generic）
+                verdict.evidence_used.append(ev.evidence_id)
+                return True
+            elif kind == "association":
+                if stale:
+                    # 过期的关联仍可作背景标注展示，不满足门槛则由上层降级
+                    continue
+                if rank >= GRADE_ORDER["D"]:
+                    verdict.evidence_used.append(ev.evidence_id)
+                    return True
+            else:  # background / mechanism 低门槛
+                if rank >= GRADE_ORDER["D"]:
+                    verdict.evidence_used.append(ev.evidence_id)
+                    return True
+        return False
+
+    # -- 单条主张校验 -------------------------------------------------------
+    def _verify_claim(
+        self,
+        claim: AnswerClaim,
+        registry: EvidenceRegistry,
+        matched_rules: Sequence[RuleDecision],
+    ) -> ClaimVerdict:
+        verdict = ClaimVerdict(claim=claim)
+
+        # 0) 类型确定性覆盖（LLM 自标不可信）
+        verdict.overridden_type = classify_claim_type(claim.text)
+        verdict.kind = _kind_of(claim.text)
+        # 覆盖后关键性重判
+        verdict.effective_critical = claim.critical or is_critical_claim(claim.text, verdict.overridden_type)
+
+        # 1) 引用完整性：证据引用必须可解析且 schema 完整；规则引用必须命中
+        ev_refs: List[EvidenceId] = registry.resolve(claim.evidence_refs)
+        matched_ids = {m.rule_id for m in matched_rules}
+        unresolved_rules = [r for r in claim.rule_refs if r not in matched_ids]
+        # 规则直出：主张仅绑定已命中的权威规则（不带任何证据引用）
+        rule_only = bool(claim.rule_refs) and not claim.evidence_refs and not unresolved_rules
+        incomplete = False
+        if not claim.evidence_refs and not claim.rule_refs:
+            incomplete = True
+        elif len(ev_refs) != len(claim.evidence_refs):
+            incomplete = True  # 有引用无法解析
+        elif unresolved_rules:
+            incomplete = True  # 规则引用未命中任何匹配规则
+        else:
+            for ev in ev_refs:
+                if not ev.schema_complete():
+                    incomplete = True
+                    break
+        verdict.checks["citation"] = {
+            "passed": not incomplete,
+            "evidence_refs": claim.evidence_refs,
+            "rule_refs": claim.rule_refs,
+        }
+        if incomplete:
+            verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+            verdict.reason = "citation_incomplete"
+            verdict.message = "该条无引用或引用不完整（无证据/规则锚点）"
+            return verdict
+
+        # 规则直出主张的规则侧证据（其内容即主张要匹配的"原文"）
+        rule_evs: List[EvidenceId] = []
+        if rule_only:
+            rule_evs = [
+                self._rule_evidence(m)
+                for m in matched_rules
+                if m.rule_id in claim.rule_refs
+            ]
+
+        # 2) 语义档开启时先咨询语义校验器
+        if self.config.semantic_enabled and self.config.semantic_verifier is not None:
+            semantic = self.config.semantic_verifier.check(claim, ev_refs)
+            verdict.semantic_used = True
+            if semantic is False:
+                verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                verdict.reason = "semantic_refute"
+                verdict.message = "语义核验：主张被绑定证据否定"
+                return verdict
+
+        # 3) 关系型主张：确定性档只能判"表面一致但语义未验证"
+        #    例外：规则直出（rule_only）——主张内容是命中的权威规则本身，
+        #    规则的否定/线次/比较语义由规则的构建方背书，无需再猜方向；
+        #    但它仍要过第 4 步"主张 vs 规则内容"的表面比对，防挂靠权威规则包装幻觉。
+        if not rule_only and verdict.overridden_type in (TYPE_NEGATION, TYPE_COMPARISON, TYPE_CAUSAL):
+            verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+            verdict.reason = "relational_unverifiable"
+            verdict.message = (
+                "该主张含否定/比较/因果等关系语义，确定性档无法验证方向，"
+                "语义档未开启 → 拒答/标注"
+            )
+            verdict.checks["claim_support"] = {"passed": False, "reason": verdict.reason}
+            return verdict
+
+        # 4) 确定性档表面要素一致性（factual / indication）
+        #    规则直出主张与「其绑定的规则内容」做表面比对（规则即权威原文），
+        #    门槛更高（≈复述规则内容，防止只挂靠规则的条件域、换掉药物的包装幻觉）；
+        #    其余主张与证据 text_span 做表面比对。
+        if rule_only:
+            support = self.surface_support(claim, rule_evs)
+            ratio = float(support.get("ratio", 0.0))
+            high_bar = max(0.75, self.config.element_ratio)
+            if support.get("passed") and ratio < high_bar:
+                support = {
+                    "passed": False,
+                    "ratio": ratio,
+                    "reason": "rule_content_mismatch",
+                }
+            elif support.get("passed"):
+                support = {
+                    "passed": True,
+                    "ratio": ratio,
+                    "reason": "rule_authoritative",
+                }
+        else:
+            support = self.surface_support(claim, ev_refs)
+        verdict.checks["claim_support"] = support
+        if not support["passed"]:
+            verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+            verdict.reason = str(support["reason"])
+            verdict.message = "表面要素一致性不通过（实体/数值未出现在证据或所引规则中）"
+            return verdict
+
+        # 5) 证据充分性门槛
+        pool: List[EvidenceId] = list(ev_refs)
+        # 规则绑定也作为证据源（等级/时效来源）
+        rule_evs = [
+            self._rule_evidence(m)
+            for m in matched_rules
+            if m.rule_id in claim.rule_refs
+        ]
+        pool.extend(rule_evs)
+        # 治疗类主张（含规则直出）：先对**完整命中集**做按域分组的冲突裁定
+        # （防止只对被引用子集仲裁而漏判"两条规则各被不同主张引用"的跨主张冲突），
+        # 再要求主张引用的规则是胜出者，否则拒答。
+        # 注意：规则直出主张的表层类型可能被重判为 comparison（主张文本含线次词，
+        # 如"三线推荐方案"），但其语义由命中的权威规则背书 —— 冲突裁定依然必须执行，
+        # 故不以 overridden_type == indication 为前提，而看是否携带规则引用 + 治疗类。
+        if claim.rule_refs and verdict.kind == "treatment":
+            winner_ids, arbitral_notes = self._arbitrate_matched(matched_rules)
+            referenced = [m for m in matched_rules if m.rule_id in claim.rule_refs]
+            if referenced and any(m.rule_id not in winner_ids for m in referenced):
+                verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                verdict.reason = "rule_conflict_lost"
+                verdict.message = "主张引用的规则在冲突裁定中被淘汰"
+                return verdict
+            if referenced and not winner_ids and arbitral_notes:
+                # 分歧声明（无胜出者）
+                verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+                verdict.reason = "rule_conflict_divergence"
+                verdict.message = "".join(arbitral_notes) or "两种推荐均存在，请结合临床判断"
+                return verdict
+
+        if not self._sufficient(verdict, pool):
+            verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
+            verdict.reason = "insufficient_evidence"
+            verdict.message = "证据充分性不足（等级过低/已过期/数值不符）"
+            return verdict
+
+        verdict.status = PASS
+        verdict.reason = "pass"
+        verdict.message = "引用完整 + 表面要素一致 + 证据充分"
+        return verdict
+
+    # -- 整体验证 -----------------------------------------------------------
+    def verify(
+        self,
+        claims: Sequence[AnswerClaim],
+        registry: EvidenceRegistry,
+        matched_rules: Optional[Sequence[RuleDecision]] = None,
+    ) -> VerifyReport:
+        matched_rules = list(matched_rules or [])
+        verdicts = [self._verify_claim(c, registry, matched_rules) for c in claims]
+
+        report = VerifyReport(verdicts=verdicts, matched_rules=matched_rules)
+        # 整体状态：存在关键拒答 → refuse；无 claims 且无规则 → refuse；否则 pass/annotate
+        refused_critical = [v for v in verdicts if v.status == REFUSE and v.effective_critical]
+        if refused_critical:
+            report.overall_status = REFUSE
+            report.overall_reason = "critical_claim_failed"
+            report.message = "存在未通过校验的关键主张（治疗/剂量/适应证/禁忌）"
+            return report
+        passed = [v for v in verdicts if v.status == PASS]
+        if passed:
+            report.overall_status = PASS
+            report.overall_reason = "all_passed_or_annotated"
+            report.message = "回答通过校验门（含标注降级项）"
+            return report
+        if not verdicts:
+            if not matched_rules:
+                report.overall_status = REFUSE
+                report.overall_reason = "no_evidence_no_rule"
+                report.message = "未检索到证据或规则，拒绝作答"
+            else:
+                report.overall_status = PASS
+                report.overall_reason = "rule_only_no_claim"
+                report.message = "存在命中规则但无额外主张，交由规则直出"
+            return report
+        # 全部为 ANNOTATE（非关键）
+        report.overall_status = ANNOTATE
+        report.overall_reason = "all_annotated"
+        report.message = "所有主张均为标注降级（未经本地证据核验）"
+        return report
