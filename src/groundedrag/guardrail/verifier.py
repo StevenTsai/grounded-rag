@@ -472,6 +472,23 @@ class Verifier:
                     return True
         return False
 
+    def _rule_sufficient(self, verdict: ClaimVerdict, rule_evs: Sequence[EvidenceId]) -> bool:
+        """规则直出主张的充分性：被引规则**未过期**即可，不按 grade 门槛拒答。
+
+        规则的 grade（A~D）反映"推荐强度"（强推荐~专家共识），应随规则来源一并
+        展示，而非作为拒答理由 —— 否则 C 级合法推荐会被误拒为"证据不足"（把
+        "推荐强度低"与"证据不足以支撑主张"混为一谈）。校验门的职责是"主张是否
+        忠实复述了一条有效（未过期）的权威规则"，而不是"该推荐临床上够不够强"。
+        时效仍要求"未过期"；缺失 updated_at 视为"未知而非过期"，不因无日期被拒
+        （规则的权威性来自规则库本身，过期与否才是关键，区别于证据的日期门槛）。
+        """
+        for ev in rule_evs:
+            if self._policy.is_stale(ev):
+                continue
+            verdict.evidence_used.append(ev.evidence_id)
+            return True
+        return False
+
     # -- 单条主张校验 -------------------------------------------------------
     def _verify_claim(
         self,
@@ -629,7 +646,15 @@ class Verifier:
                     verdict.message = "主张引用的规则在冲突裁定中被淘汰"
                     return verdict
 
-        if not self._sufficient(verdict, anchored):
+        # 规则直出主张：充分性由「被引规则未过期」决定，不按 grade 门槛拒答
+        # （规则的 grade 是推荐强度，不是充分性门槛；见 _rule_sufficient）。
+        # 其余主张：按证据等级/数值/时效的门槛判定（见 _sufficient）。
+        sufficient = (
+            self._rule_sufficient(verdict, anchored)
+            if rule_only
+            else self._sufficient(verdict, anchored)
+        )
+        if not sufficient:
             verdict.status = REFUSE if verdict.effective_critical else ANNOTATE
             verdict.reason = "insufficient_evidence"
             verdict.message = "证据充分性不足（等级过低/已过期/数值不符）"

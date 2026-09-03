@@ -253,6 +253,7 @@ def _is_conflict(r1: RuleDecision, r2: RuleDecision) -> bool:
 
 **方案**：
 - **规则命中** → `pipeline.py` 直接拼装答案（无需 LLM），标记 `used_llm=None` + `reason=rule_authoritative`
+- **规则 grade 是推荐强度，不是充分性门槛** → 规则直出主张的充分性只要求"被引规则未过期"（`_rule_sufficient`），不因 C/D 级（推荐强度低）而拒答为 `insufficient_evidence` —— 把"推荐强度低"与"证据不足以支撑主张"区分开；grade 随来源展示，供临床判断，而非校验门拦截依据。
 - **未命中 + 证据不足** → `llm/template.py` 结构化拒答文案（"该问题缺乏充分证据，建议携带病历线下就诊"）
 - **Gradio 对照** → 裸 RAG 模式在无 LLM 时用 eval_set 幻觉变体注入展示，明确标注"模拟注入，仅作对照"
 
@@ -320,7 +321,7 @@ bm25 = BM25(corpus, tokenizer=my_tokenizer)
 
 ## 测试策略
 
-- **单元测试**（197 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
+- **单元测试**（199 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
 - **端到端测试**：`test_pipeline.py`（规则直出 + 分歧拒答 + LLM 结构化）
 - **评测集回归**：`test_eval_runner.py`（三指标 ≥ 0.95）
 - **合规扫描**：`test_leak_scan.py`（专利草稿 / 凭据泄漏自检）

@@ -184,6 +184,34 @@ class TestRuleDirectAndConflict:
         assert v.reason == "pass"
         assert v.checks["claim_support"]["reason"] == "rule_authoritative"
 
+    def test_rule_direct_grade_c_pass(self):
+        # 规则直出的 C 级推荐（推荐强度低，非充分性不足）→ 不应被误拒为
+        # "insufficient_evidence"（#1）：规则的 grade 是推荐强度，不是拒答门槛。
+        verifier = Verifier()
+        rules = [decision("r-div-c", ["甲磺酸阿帕替尼"], grade="C")]
+        c = claim(
+            "肺癌 三线 EGFR 推荐方案：甲磺酸阿帕替尼",
+            rule_refs=["r-div-c"], critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry(), rules)
+        v = rep.verdicts[0]
+        assert v.status == PASS
+        assert v.reason == "pass"
+        assert v.checks["claim_support"]["reason"] == "rule_authoritative"
+
+    def test_rule_direct_stale_grade_c_still_refuses(self):
+        # 规则直出的时效要求保留：C 级但已过期的规则 → 裁定判负（不因 #1 放宽时效）
+        verifier = Verifier()
+        rules = [decision("r-div-old", ["甲磺酸阿帕替尼"], grade="C", updated_at="2019-01-01")]
+        c = claim(
+            "肺癌 三线 EGFR 推荐方案：甲磺酸阿帕替尼",
+            rule_refs=["r-div-old"], critical=True,
+        )
+        rep = verifier.verify([c], EvidenceRegistry(), rules)
+        v = rep.verdicts[0]
+        assert v.status == REFUSE
+        assert v.reason == "rule_conflict_lost"
+
     def test_rule_direct_content_mismatch(self):
         verifier = Verifier()
         rules = [decision("r-div-a", ["甲磺酸阿帕替尼"], grade="A")]
