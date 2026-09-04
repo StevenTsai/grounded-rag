@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
 [![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
-[![CI](https://github.com/groundedrag/groundedrag/actions/workflows/ci.yml/badge.svg)](https://github.com/groundedrag/groundedrag/actions)
+[![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
 **轻量开源 RAG 框架** —— 以「声明级校验门（claim-level verifier）」可复现地减少无证据输出，
 让 LLM 回答做到「**有据可依，无据可拒**」。
@@ -173,7 +173,7 @@ grounded-rag/
 ## 参考应用
 
 GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
-参考应用线上运行见 https://onco.ylkang.cn/（旧问答管线，未含声明级校验门）；本框架将校验门机制
+参考应用线上运行见 https://onco.ylkang.cn；本框架将校验门机制
 独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
 
 ## 合规与第三方依赖
@@ -198,3 +198,5 @@ GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,
 ## License
 
 MIT © 2026 GroundedRAG Contributors。见 [LICENSE](LICENSE)。
+
+**[English Documentation](README.md)**
