@@ -7,7 +7,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
 [![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
-Lightweight open-source RAG framework with **claim-level deterministic verifier** — reducing hallucinations by *refusing* answers that lack evidence, not just generating them.
+Lightweight open-source RAG framework with claim-level deterministic verifier — reducing hallucinations by refusing claims that lack evidence, not just generating them.
 
 GroundedRAG is designed for high-risk domains (medical, legal, finance) where hallucination is dangerous: every answer is decomposed into atomic claims (`AnswerClaim`), each bound to traceable evidence (`EvidenceId`) or authoritative rules (`RuleDecision`), then passed through a deterministic verifier gate before deciding **PASS / ANNOTATE / REFUSE**.
 
