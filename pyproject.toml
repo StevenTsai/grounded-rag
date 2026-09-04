@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "GroundedRAG —— 轻量开源 RAG 框架：以「声明级校验门」可复现地减少无证据输出，让 LLM 回答「有据可依、无据可拒」。"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "GroundedRAG Team" }]
 keywords = [
     "rag",
@@ -23,7 +23,6 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
