@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "groundedrag"
-version = "0.1.0"
+version = "1.0.0"
 description = "GroundedRAG —— 轻量开源 RAG 框架：以「声明级校验门」可复现地减少无证据输出，让 LLM 回答「有据可依、无据可拒」。"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -56,9 +56,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/miniclaw27/grounded-rag"
-Repository = "https://github.com/miniclaw27/grounded-rag"
-BugTracker = "https://github.com/miniclaw27/grounded-rag/issues"
+Homepage = "https://gitee.com/miniclaw27/grounded-rag"
+Repository = "https://gitee.com/miniclaw27/grounded-rag"
+BugTracker = "https://gitee.com/miniclaw27/grounded-rag/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

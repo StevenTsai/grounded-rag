@@ -37,6 +37,11 @@ class FailoverLLM(LLMService):
     def last_error(self) -> Optional[LLMError]:
         return getattr(self, "_last_error", None)
 
+    @property
+    def last_used_name(self) -> Optional[str]:
+        """最近一次实际完成生成的子服务名（供 used_llm 展示真实模型）。"""
+        return getattr(self, "_last_used_name", None)
+
     def is_available(self) -> bool:
         return any(s.is_available() for s in self.services)
 
@@ -47,14 +52,17 @@ class FailoverLLM(LLMService):
         temperature: float = 0.3,
         max_tokens: Optional[int] = None,
     ) -> str:
+        self._last_used_name = None  # 本次调用尚未完成，先清空上次记录
         last_exc: Optional[Exception] = None
         for svc in self.services:
             if not svc.is_available():
                 continue
             try:
-                return svc.generate(
+                out = svc.generate(
                     prompt, temperature=temperature, max_tokens=max_tokens
                 )
+                self._last_used_name = svc.name
+                return out
             except LLMError as exc:
                 last_exc = exc
                 continue

@@ -19,11 +19,17 @@ VALID_GRADES = ("A", "B", "C", "D")
 # 方案名组合分隔符（用于把「A+贝伐」拆成组件，判断互补 vs 互斥）
 _PLAN_SEP_RE = re.compile(r"[+＋,，、/；;\s和与以及]")
 
-# 治疗线次归一化
-_LINE_ALIASES = {
-    "一线": "一线", "1线": "一线", "first": "一线", "初始": "一线",
-    "二线": "二线", "2线": "二线", "second": "二线",
-    "三线": "三线", "3线": "三线", "后线": "后线",
+# 治疗线次归一化 —— 单一事实来源：engine 的问题线次识别关键词也取自本表键集，
+# 保证"检测到的线次词一定可归一"（旧实现 engine 自带一组含「初始治疗/后线治疗」
+# 等长短语的关键词，其中部分不在归一表里 → 归一后仍是原文，线次条件永不命中）。
+LINE_ALIASES = {
+    "一线": "一线", "一线治疗": "一线", "初始治疗": "一线", "初始": "一线",
+    "1线": "一线", "first": "一线", "first-line": "一线",
+    "二线": "二线", "二线治疗": "二线", "2线": "二线",
+    "second": "二线", "second-line": "二线",
+    "三线": "三线", "三线治疗": "三线", "3线": "三线",
+    "third": "三线", "third-line": "三线",
+    "后线治疗": "后线", "后线": "后线",
 }
 
 
@@ -31,7 +37,7 @@ def normalize_line(value: Optional[str]) -> Optional[str]:
     """治疗线次归一化（未知名词保持原样）。"""
     if value is None:
         return None
-    return _LINE_ALIASES.get(value.strip(), value.strip())
+    return LINE_ALIASES.get(value.strip(), value.strip())
 
 
 def plan_components(plan_name: str) -> List[str]:

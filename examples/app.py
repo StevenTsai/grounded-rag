@@ -21,19 +21,17 @@
 from __future__ import annotations
 
 import html
-import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from groundedrag.eval.cases import load_eval_set, parse_case_claims
 from groundedrag.guardrail import (
     ANNOTATE,
     PASS,
     REFUSE,
-    AnswerClaim,
     ClaimVerdict,
 )
-from groundedrag.guardrail.claims import parse_claims
 from groundedrag.llm import FailoverLLM, OpenAICompatibleLLM
 from groundedrag.pipeline import Pipeline, PipelineResult
 
@@ -94,14 +92,8 @@ REAL_LLM = _real_llm()
 
 
 def load_eval_cases() -> List[Dict[str, Any]]:
-    cases: List[Dict[str, Any]] = []
-    with open(EVAL_SET, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            cases.append(json.loads(line))
-    return cases
+    # 读取统一收口到 eval.cases（demo/app/runner 共用）
+    return load_eval_set(EVAL_SET)
 
 
 EVAL_CASES = load_eval_cases()
@@ -124,35 +116,27 @@ def _inject_case_claims(
     """把 eval 用例中（含幻觉变体的）主张逐条过校验门 → 逐条判定面板 + 整体判定。
 
     无 LLM 也可跑：被测对象是"检索→规则→校验门"确定性链路。
+    主张解析（含 expected 保留）统一收口到 eval.cases，与 runner/demo 一致。
     """
-    result = PIPE.ask(
-        question,
-        context=case.get("context") or None,
-        evidence_docs=case.get("evidence_docs") or None,
-    )
     info = PIPE.retrieve_and_match(
         question,
         context=case.get("context") or None,
         evidence_docs=case.get("evidence_docs") or None,
     )
-    claims: List[AnswerClaim] = []
-    for item in case.get("claims", []) or []:
-        if isinstance(item, str):
-            claims.extend(
-                parse_claims(
-                    item,
-                    evidence_ids=info["evidence_ids"],
-                    rule_ids=info["rule_ids"],
-                )
-            )
-        else:
-            claims.append(AnswerClaim.from_dict(item))
-    expected_of = {
-        i: str(c.get("expected", ""))
-        for i, c in enumerate(case.get("claims", []))
-        if isinstance(c, dict) and c.get("expected")
-    }
+    claims, expected_of = parse_case_claims(
+        case,
+        evidence_ids=info["evidence_ids"],
+        rule_ids=info["rule_ids"],
+    )
     report = PIPE.verifier.verify(claims, info["registry"], info["matched"])
+    # 检索/证据/规则与主流程一致（本路径不重跑 ask —— 主张由 eval 集注入，无需 LLM）
+    result = PipelineResult(
+        question=question,
+        report=report,
+        matched_rules=info["matched"],
+        evidence=info["registry"].all(),
+        retrieved=info["retrieved"],
+    )
     return {
         "report": report,
         "verdicts": report.verdicts,
@@ -287,7 +271,7 @@ def _claims_html(
             if rule_only
             else ""
         )
-        exp = expected_of.get(i - 1, "")
+        exp = expected_of.get(id(v.claim), "")
         exp_html = (
             f'<span style="color:#666;margin-left:8px;">期望 <b>{exp}</b> '
             f'{"<b style=color:#137333>✓</b>" if exp == v.status else "<b style=color:#c5221f>✗</b>"}</span>'

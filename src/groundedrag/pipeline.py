@@ -209,12 +209,16 @@ class Pipeline:
     def context_for(
         self, question: str, context: Optional[Mapping[str, str]] = None
     ) -> Dict[str, str]:
-        """上下文：显式传入优先，缺省字段用启发式从问题提取。"""
+        """上下文：显式传入优先，缺失字段逐字段用启发式从问题补齐。
+
+        原先仅在三个字段全部缺失时才抽取，导致调用方只给部分 context
+        （如只给了 treatment_line）时，cancer_type/biomarker 永远不会从问题补全，
+        规则匹配静默失败。现在始终抽取，仅 setdefault 填充缺失字段。
+        """
         ctx: Dict[str, str] = dict(context or {})
-        if not ctx.get("cancer_type") and not ctx.get("biomarker") and not ctx.get("treatment_line"):
-            extracted = self.engine.extract_context(question, self.synonym_map)
-            for k, v in extracted.items():
-                ctx.setdefault(k, v)
+        extracted = self.engine.extract_context(question, self.synonym_map)
+        for k, v in extracted.items():
+            ctx.setdefault(k, v)
         return ctx
 
     def retrieve_and_match(
@@ -321,7 +325,10 @@ class Pipeline:
             "3) 证据/规则未覆盖的内容不要写，不确定就只写『无法确认』；\n"
             f"问题：{question}"
         )
-        return llm.generate(prompt), getattr(llm, "name", "llm")
+        raw = llm.generate(prompt)
+        # FailoverLLM 记录最近一次实际完成生成的子服务（真实模型名）；其余服务用其自身 name。
+        used = getattr(llm, "last_used_name", None) or getattr(llm, "name", None) or "llm"
+        return raw, used
 
     @staticmethod
     def _drop_template_claims(claims: Sequence[AnswerClaim]) -> List[AnswerClaim]:

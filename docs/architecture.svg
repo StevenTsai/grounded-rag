@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" font-family="'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowOut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="960" height="560" fill="#ffffff"/>
+
+  <!-- ============ 顶部编排层 ============ -->
+  <rect x="20" y="20" width="920" height="60" rx="10" fill="#1e293b"/>
+  <text x="40" y="44" font-size="16" font-weight="700" fill="#ffffff">pipeline.py · 编排层</text>
+  <text x="40" y="66" font-size="13" fill="#cbd5e1">检索 → 规则匹配 → 受约束生成 → 主张解析 → 校验门 → 降级 / 拒答</text>
+
+  <!-- 从编排层到三层的连接 -->
+  <line x1="180" y1="80" x2="180" y2="108" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="480" y1="80" x2="480" y2="108" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="795" y1="80" x2="795" y2="108" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ 三层 ============ -->
+  <!-- retriever -->
+  <g>
+    <rect x="20" y="110" width="290" height="250" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+    <rect x="20" y="110" width="290" height="44" rx="12" fill="#10b981"/>
+    <rect x="20" y="132" width="290" height="22" fill="#10b981"/>
+    <text x="40" y="138" font-size="15" font-weight="700" fill="#ffffff">retriever/</text>
+    <text x="40" y="172" font-size="13" fill="#065f46">BM25 检索（jieba / CJK 回退）</text>
+    <text x="40" y="206" font-size="13" fill="#065f46">实体增强</text>
+    <text x="40" y="240" font-size="13" fill="#065f46">查询扩展</text>
+    <text x="40" y="274" font-size="13" fill="#065f46">领域词典（可注入 / 可闭源）</text>
+    <text x="40" y="318" font-size="11" fill="#6ee7b7" font-style="italic">输入：问题 + 文档语料</text>
+  </g>
+
+  <!-- guardrail ★ -->
+  <g>
+    <rect x="335" y="110" width="290" height="250" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="2.5"/>
+    <rect x="335" y="110" width="290" height="44" rx="12" fill="#f59e0b"/>
+    <rect x="335" y="132" width="290" height="22" fill="#f59e0b"/>
+    <text x="355" y="138" font-size="15" font-weight="700" fill="#ffffff">guardrail/ ★ 核心差异化</text>
+    <text x="355" y="172" font-size="13" fill="#92400e">规则引擎 RuleDecision</text>
+    <text x="355" y="206" font-size="13" fill="#92400e">证据溯源 EvidenceId</text>
+    <text x="355" y="240" font-size="13" fill="#92400e">声明解析 AnswerClaim</text>
+    <text x="355" y="274" font-size="13" font-weight="700" fill="#b45309">★ 声明级校验门 verifier</text>
+    <text x="355" y="318" font-size="11" fill="#f59e0b" font-style="italic">确定性纯逻辑 · 零 LLM 依赖</text>
+  </g>
+
+  <!-- llm -->
+  <g>
+    <rect x="650" y="110" width="290" height="250" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+    <rect x="650" y="110" width="290" height="44" rx="12" fill="#8b5cf6"/>
+    <rect x="650" y="132" width="290" height="22" fill="#8b5cf6"/>
+    <text x="670" y="138" font-size="15" font-weight="700" fill="#ffffff">llm/</text>
+    <text x="670" y="172" font-size="13" fill="#4c1d95">LLMService 策略基类</text>
+    <text x="670" y="206" font-size="13" fill="#4c1d95">OpenAI 兼容客户端（零 SDK）</text>
+    <text x="670" y="240" font-size="13" fill="#4c1d95">模板回退（无据拒答文案）</text>
+    <text x="670" y="274" font-size="13" fill="#4c1d95">主备降级 FailoverLLM</text>
+    <text x="670" y="318" font-size="11" fill="#a78bfa" font-style="italic">可选 · 规则直出时无需 LLM</text>
+  </g>
+
+  <!-- 层间数据流 -->
+  <line x1="310" y1="235" x2="335" y2="235" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="625" y1="235" x2="650" y2="235" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- 输入 / 输出 -->
+  <text x="20" y="100" font-size="11" fill="#64748b">用户提问</text>
+  <line x1="20" y1="235" x2="8" y2="235" stroke="#0f766e" stroke-width="0"/>
+  <text x="952" y="235" font-size="11" fill="#64748b" text-anchor="end">可信回答</text>
+
+  <!-- ============ 底部三态判定 ============ -->
+  <rect x="20" y="400" width="920" height="56" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="40" y="424" font-size="13" font-weight="700" fill="#334155">校验门三态判定</text>
+  <g font-size="13" font-weight="700">
+    <text x="40" y="446" fill="#059669">PASS · 原样输出</text>
+    <text x="300" y="446" fill="#d97706">ANNOTATE · 附标注降级</text>
+    <text x="620" y="446" fill="#dc2626">REFUSE · 拒答 / 删除</text>
+  </g>
+
+  <!-- 三态 → 交付 -->
+  <line x1="480" y1="456" x2="480" y2="480" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="20" y="486" width="920" height="48" rx="10" fill="#0f766e"/>
+  <text x="480" y="516" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">交付：可信回答 + 溯源链路 + 校验报告（有据可依，无据可拒）</text>
+</svg>

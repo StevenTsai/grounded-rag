@@ -23,6 +23,13 @@ class TestNormalizeLine:
         assert normalize_line("first") == "一线"
         assert normalize_line("后线") == "后线"
 
+    def test_phrase_aliases_normalized(self):
+        # engine 识别关键词与归一表同源：长短语也须归一（旧实现残留原文、线次条件不命中）
+        assert normalize_line("初始治疗") == "一线"
+        assert normalize_line("一线治疗") == "一线"
+        assert normalize_line("后线治疗") == "后线"
+        assert normalize_line("second-line") == "二线"
+
     def test_unknown_kept_trimmed(self):
         assert normalize_line("新辅助") == "新辅助"
 
