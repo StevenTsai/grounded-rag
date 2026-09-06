@@ -642,8 +642,12 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
 
 
 def _load_dotenv(path: str = ".env") -> None:
-    """轻量 .env 加载器（不覆盖已有环境变量，零依赖）。"""
+    """轻量 .env 加载器（不覆盖已有环境变量，零依赖）。
+
+    支持行内注释（值后 `` # ...`` 被剥离）。
+    """
     import os
+    import re
 
     p = os.path.join(os.getcwd(), path)
     if not os.path.isfile(p):
@@ -657,7 +661,9 @@ def _load_dotenv(path: str = ".env") -> None:
                 continue
             key, _, value = line.partition("=")
             key = key.strip()
-            value = value.strip().strip('"').strip("'")
+            # 去掉行内注释（空格/制表符 + # + 后续内容）
+            value = re.sub(r"\s+#.*$", "", value).strip()
+            value = value.strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
 
