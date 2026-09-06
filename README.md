@@ -33,14 +33,19 @@ The deterministic tier checks **surface element consistency** (entities/numbers/
 
 ```bash
 pip install -e ".[demo]"     # or minimal: pip install -e .
-python examples/demo.py      # CLI end-to-end demo
-python examples/app.py       # Gradio interactive demo
 ```
 
-Works **without any API key**: rule hits produce answers directly ("rule-direct"), misses produce structured refusal.
+**Option 1: CLI (simplest)**
+
+```bash
+groundedrag ask "EGFR mutation stage IV NSCLC first-line?"
+groundedrag init --dir my_domain/               # generate docs + rules templates
+```
+
+**Option 2: Python API**
 
 ```python
-from groundedrag.pipeline import Pipeline
+from groundedrag import Pipeline
 
 pipe = Pipeline.build_from_json(
     "examples/seed_docs.jsonl", "examples/seed_rules.json"
@@ -49,6 +54,15 @@ result = pipe.ask("EGFR mutation stage IV NSCLC first-line?")
 print(result.answer_text)
 # - NSCLC 1L EGFR: Osimertinib
 ```
+
+**Option 3: Interactive Demo**
+
+```bash
+python examples/demo.py      # CLI end-to-end demo
+python examples/app.py       # Gradio interactive demo
+```
+
+Works **without any API key**: rule hits produce answers directly ("rule-direct"), misses produce structured refusal.
 
 Enable a real LLM (OpenAI-compatible endpoint):
 
@@ -121,6 +135,7 @@ pipeline.py orchestration: Retrieval → Rule Matching → Constrained Generatio
 - **`llm/`**: `LLMService` strategy base + OpenAI-compatible native HTTP client (zero SDK) + template fallback + failover.
 - **`eval/`**: Built-in benchmark runner (verify mode + e2e mode), multi-provider LLM config via `.env`.
 - **`pipeline.py`**: Orchestration (`Pipeline.build_from_json(...).ask(...)`).
+- **`cli.py`**: CLI tool (`groundedrag ask / init`).
 
 ## What Makes This Different
 
@@ -145,11 +160,12 @@ grounded-rag/
 │   ├── guardrail/      # models/engine/provider/evidence/claims/verifier ★
 │   ├── llm/            # base/openai_compat/template/failover
 │   ├── eval/           # Benchmark runner (verify + e2e modes)
+│   ├── cli.py          # CLI tool (groundedrag ask / init)
 │   └── pipeline.py     # Trustworthy QA orchestration
 ├── examples/           # Seed data, eval sets, demo.py, app.py
 ├── tests/              # pytest unit tests
 ├── tools/leak_scan.py  # Open source compliance scanner
-├── docs/               # Metrics / comparison / architecture
+├── docs/               # Metrics / comparison / architecture / domain guide
 └── .env.example        # LLM provider configuration template
 ```
 
@@ -163,6 +179,19 @@ grounded-rag/
 ## Acknowledgements
 
 GroundedRAG evolved from the production practice of the **onco-hub** medical data platform (47,000+ medical records + CSCO guideline rules). The framework is open-sourced with synthetic demo data (`examples/`) for any vertical domain to reuse.
+
+## Domain Adaptation
+
+The verifier gate is domain-agnostic — just prepare **evidence documents** and a **rule library**:
+
+```bash
+groundedrag init --dir my_domain/               # generate templates
+# edit my_domain/my_seed_docs.jsonl             # add your documents
+# edit my_domain/my_seed_rules.json             # add your rules
+groundedrag ask "your question" --docs my_domain/my_seed_docs.jsonl --rules my_domain/my_seed_rules.json
+```
+
+Full guide: [docs/domain_guide.md](docs/domain_guide.md) (includes finance/legal examples).
 
 ## Contributing
 

@@ -40,14 +40,19 @@ AnswerClaim[]  ──引用──▶  EvidenceId[]  /  RuleDecision[]
 
 ```bash
 pip install -e ".[demo]"     # 或最小安装 pip install -e .
-python examples/demo.py      # CLI 端到端 demo
-python examples/app.py       # Gradio 可视化 demo
 ```
 
-无 API Key 也能跑通全链路：规则命中走"规则直出"（有据可答），未命中则结构化拒答。
+**方式一：命令行（最简单）**
+
+```bash
+groundedrag ask "EGFR突变肺癌一线推荐什么方案？"
+groundedrag init --dir my_domain/               # 生成 docs + rules 模板
+```
+
+**方式二：Python API**
 
 ```python
-from groundedrag.pipeline import Pipeline
+from groundedrag import Pipeline
 
 pipe = Pipeline.build_from_json(
     "examples/seed_docs.jsonl", "examples/seed_rules.json"
@@ -56,6 +61,15 @@ result = pipe.ask("EGFR 突变的晚期肺癌一线推荐什么方案？")
 print(result.answer_text)
 # - 肺癌 一线 EGFR 推荐方案：奥希替尼
 ```
+
+**方式三：可视化 Demo**
+
+```bash
+python examples/demo.py      # CLI 端到端 demo
+python examples/app.py       # Gradio 可视化 demo
+```
+
+无 API Key 也能跑通全链路：规则命中走"规则直出"（有据可答），未命中则结构化拒答。
 
 启用真实 LLM（OpenAI 兼容端点，如 DeepSeek / 小米 MiMo / 豆包）：
 
@@ -135,6 +149,7 @@ pipeline.py 编排：检索 → 规则匹配 → 受约束生成 → 声明解�
 - `llm/`：`LLMService` 策略基类 + OpenAI 兼容原生 HTTP 客户端（零 SDK）+ 模板回退 + 主备降级。
 - `eval/`：内置评测集跑分（verify + e2e 两种模式），支持 `.env` 多 provider 配置。
 - `pipeline.py`：编排流水线（`Pipeline.build_from_json(...).ask(...)`）。
+- `cli.py`：命令行工具（`groundedrag ask / init`）。
 
 ## 目录
 
@@ -145,11 +160,12 @@ grounded-rag/
 │   ├── guardrail/      # models/engine/provider/evidence/claims/verifier ★
 │   ├── llm/            # base/openai_compat/template/failover
 │   ├── eval/           # 评测（verify + e2e 两种模式）
+│   ├── cli.py          # 命令行工具（groundedrag ask / init）
 │   └── pipeline.py     # 可信问答编排
 ├── examples/           # 种子数据、评测集、demo.py、app.py
 ├── tests/              # pytest 单测
 ├── tools/leak_scan.py  # 开源自检工具
-├── docs/               # 指标口径 / 对照实验 / 架构设计
+├── docs/               # 指标口径 / 对照实验 / 架构设计 / 领域适配指南
 └── .env.example        # LLM provider 配置模板
 ```
 
@@ -195,6 +211,19 @@ grounded-rag/
 GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
 参考应用线上运行见 https://onco.ylkang.cn；本框架将校验门机制
 独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
+
+## 领域适配
+
+GroundedRAG 的校验门是领域无关的——只需准备**证据文档**和**规则库**即可适配新领域：
+
+```bash
+groundedrag init --dir my_domain/               # 生成模板
+# 编辑 my_domain/my_seed_docs.jsonl             # 填入你的文档
+# 编辑 my_domain/my_seed_rules.json             # 填入你的规则
+groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_domain/my_seed_rules.json
+```
+
+完整指南见 [docs/domain_guide.md](docs/domain_guide.md)（含金融/法律示例）。
 
 ## 合规与第三方依赖
 
