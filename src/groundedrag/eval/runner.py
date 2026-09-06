@@ -571,10 +571,10 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
     primary_model = unified_model or preset["model"]
 
     if not primary_key:
-        print(f"错误：未找到 API Key。请配置以下任一方式：")
+        print("错误：未找到 API Key。请配置以下任一方式：")
         print(f"  1. .env 文件：LLM_API_KEY=sk-xxx 或 {preset['key_env']}=sk-xxx")
-        print(f"  2. 环境变量：export LLM_API_KEY=sk-xxx")
-        print(f"  3. 命令行：  --llm-api-key sk-xxx")
+        print("  2. 环境变量：export LLM_API_KEY=sk-xxx")
+        print("  3. 命令行：  --llm-api-key sk-xxx")
         return 1
 
     # 5. 构建 primary + fallback services
@@ -585,7 +585,8 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
         model=primary_model,
     )
     services.append(primary)
-    print(f"主模型：{provider} / {primary_model}")
+    if not args.json:
+        print(f"主模型：{provider} / {primary_model}")
 
     # 其他 provider 作为 fallback
     for fb_name, fb_preset in _PRESETS.items():
@@ -603,7 +604,8 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
         )
         if fb_svc.is_available():
             services.append(fb_svc)
-            print(f"备用模型：{fb_name} / {fb_model}")
+            if not args.json:
+                print(f"备用模型：{fb_name} / {fb_model}")
 
     llm = FailoverLLM(services=services)
     pipeline = Pipeline.build_from_json(args.docs, args.rules, llm=llm)
@@ -668,5 +670,5 @@ def _load_dotenv(path: str = ".env") -> None:
                 os.environ[key] = value
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover —— python -m 入口，由集成测试覆盖
     raise SystemExit(main())

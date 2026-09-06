@@ -179,12 +179,12 @@ def _cmd_init(args: argparse.Namespace) -> int:
         )
         print(f"已生成 {rules_path}")
 
-    print(f"\n下一步：")
+    print("\n下一步：")
     print(f"  1. 编辑 {docs_path} 填入你的证据文档")
     print(f"  2. 编辑 {rules_path} 填入你的规则")
     print(f"  3. groundedrag ask \"你的问题\" --docs {docs_path} --rules {rules_path}")
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover —— python -m 入口，由集成测试覆盖
     raise SystemExit(main())
