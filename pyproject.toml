@@ -54,6 +54,9 @@ dev = [
     "pip-licenses>=4.0",
 ]
 
+[project.scripts]
+groundedrag = "groundedrag.cli:main"
+
 [project.urls]
 Homepage = "https://gitee.com/miniclaw27/grounded-rag"
 Repository = "https://gitee.com/miniclaw27/grounded-rag"
