@@ -28,3 +28,4 @@ third_party_licenses.txt
 
 # 开源合规：私有词表本地维护，不入库（模板见 .leak_markers.example.json）
 .leak_markers.json
+oncohub.db

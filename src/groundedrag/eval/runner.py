@@ -34,9 +34,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
 from groundedrag.eval.cases import load_eval_set, parse_case_claims
 from groundedrag.guardrail.verifier import ANNOTATE, PASS, REFUSE, VerifyReport
@@ -190,6 +191,151 @@ class EvalReport:
             lines.append(f"#{c.index} {c.question}")
             lines.extend(status)
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# E2E 端到端评测
+# ---------------------------------------------------------------------------
+@dataclass
+class E2EResult:
+    """单条 E2E 评测结果（完整 ask() 流程）。"""
+
+    case_id: int
+    question: str
+    status: str  # Answer.status: pass / refuse / annotate / partial_pass
+    used_llm: Optional[str] = None
+    answer_text: str = ""
+    verdicts: List[Dict[str, Any]] = field(default_factory=list)
+    expected_status: Optional[str] = None
+    matched: Optional[bool] = None  # actual vs expected; None = 无期望值
+    latency_ms: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "case_id": self.case_id,
+            "question": self.question,
+            "status": self.status,
+            "used_llm": self.used_llm,
+            "answer_text": self.answer_text,
+            "verdicts": self.verdicts,
+            "expected_status": self.expected_status,
+            "matched": self.matched,
+            "latency_ms": self.latency_ms,
+        }
+
+
+@dataclass
+class E2EReport:
+    """E2E 评测汇总报告。"""
+
+    total: int = 0
+    matched_count: int = 0
+    mismatched_count: int = 0
+    llm_used_count: int = 0
+    rule_direct_count: int = 0
+    verdict_distribution: Dict[str, int] = field(default_factory=dict)
+    results: List[E2EResult] = field(default_factory=list)
+
+    @property
+    def match_rate(self) -> Optional[float]:
+        judged = [r for r in self.results if r.matched is not None]
+        if not judged:
+            return None
+        return len([r for r in judged if r.matched]) / len(judged)
+
+    @property
+    def llm_usage_rate(self) -> Optional[float]:
+        if not self.total:
+            return None
+        return self.llm_used_count / self.total
+
+    def summary_dict(self) -> Dict[str, Any]:
+        return {
+            "total": self.total,
+            "match_rate": round(self.match_rate, 4) if self.match_rate is not None else None,
+            "llm_usage_rate": round(self.llm_usage_rate, 4) if self.llm_usage_rate is not None else None,
+            "rule_direct_rate": round(self.rule_direct_count / self.total, 4) if self.total else None,
+            "verdict_distribution": self.verdict_distribution,
+            "avg_latency_ms": round(sum(r.latency_ms for r in self.results) / len(self.results)) if self.results else 0,
+        }
+
+    def render(self) -> str:
+        lines = ["===== GroundedRAG E2E 评测结果 =====", json.dumps(self.summary_dict(), ensure_ascii=False, indent=2)]
+        lines.append("—— 逐条明细 ——")
+        for r in self.results:
+            mark = "✓" if r.matched else ("✗" if r.matched is False else "?")
+            llm_tag = f"llm={r.used_llm}" if r.used_llm else "规则直出"
+            lines.append(
+                f"  [{mark}] #{r.case_id} status={r.status} {llm_tag} "
+                f"latency={r.latency_ms}ms"
+            )
+            lines.append(f"       Q: {r.question}")
+            if r.answer_text:
+                lines.append(f"       A: {r.answer_text[:120]}")
+            if r.verdicts:
+                for v in r.verdicts:
+                    lines.append(f"         claim: [{v.get('status')}] {v.get('text', '')[:80]}")
+        return "\n".join(lines)
+
+
+def run_e2e(
+    eval_path: Union[str, Path],
+    pipeline_fn: Callable[[str], Any],
+    *,
+    expected_verdicts: Optional[Dict[int, str]] = None,
+) -> E2EReport:
+    """跑 E2E 端到端评测：对每个 question 调用完整 pipeline.ask()。
+
+    ``pipeline_fn``: 接收 question 字符串，返回 ``Answer`` 对象。
+    ``expected_verdicts``: {case_id (0-based): expected_status} 可选。
+    """
+    cases = load_eval_set(eval_path)
+    report = E2EReport()
+
+    for i, case in enumerate(cases):
+        question = case.get("question", "")
+        expected = (expected_verdicts or {}).get(i)
+
+        t0 = time.time()
+        answer = pipeline_fn(question)
+        latency = int((time.time() - t0) * 1000)
+
+        verdicts = answer.report.verdicts if answer.report else []
+        actual_verdicts = [
+            {"text": v.claim.text, "status": v.status, "reason": v.reason}
+            for v in verdicts
+        ]
+        matched = (answer.status == expected) if expected is not None else None
+
+        result = E2EResult(
+            case_id=i + 1,
+            question=question,
+            status=answer.status,
+            used_llm=getattr(answer, "used_llm", None),
+            answer_text=getattr(answer, "answer_text", ""),
+            verdicts=actual_verdicts,
+            expected_status=expected,
+            matched=matched,
+            latency_ms=latency,
+        )
+        report.results.append(result)
+        report.total += 1
+
+        if matched is True:
+            report.matched_count += 1
+        elif matched is False:
+            report.mismatched_count += 1
+
+        if result.used_llm:
+            report.llm_used_count += 1
+        else:
+            report.rule_direct_count += 1
+
+        report.verdict_distribution[result.status] = (
+            report.verdict_distribution.get(result.status, 0) + 1
+        )
+
+    return report
 
 
 def _run_case(
@@ -348,14 +494,25 @@ def score_baseline(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="groundedrag-eval",
-        description="GroundedRAG 评测：引用完整性率 / 表面一致率 / 拒答正确率",
+        description="GroundedRAG 评测：引用完整性率 / 表面一致率 / 拒答正确率 / E2E 端到端",
     )
     parser.add_argument("--docs", default="examples/seed_docs.jsonl")
     parser.add_argument("--rules", default="examples/seed_rules.json")
     parser.add_argument("--eval", default="examples/eval_set.jsonl")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--json", action="store_true", help="只输出 JSON 摘要")
+
+    # E2E 端到端模式
+    parser.add_argument("--e2e", action="store_true", help="启用 E2E 端到端评测（需 API Key）")
+    parser.add_argument("--llm-provider", default=None, help="主 LLM provider：xiaomi / deepseek / doubao")
+    parser.add_argument("--llm-api-key", default=None, help="LLM API Key（覆盖 .env）")
+    parser.add_argument("--llm-base-url", default=None, help="LLM Base URL（覆盖 .env）")
+    parser.add_argument("--llm-model", default=None, help="LLM 模型名（覆盖 .env）")
+    parser.add_argument("--e2e-max", type=int, default=0, help="E2E 最多跑几题（0=全部）")
     args = parser.parse_args(argv)
+
+    if args.e2e:
+        return _run_e2e_cli(args)
 
     report = run_evaluation(
         args.eval, docs_path=args.docs, rules_path=args.rules, top_k=args.top_k
@@ -365,6 +522,144 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         print(report.render())
     return 0
+
+
+def _run_e2e_cli(args: argparse.Namespace) -> int:
+    """E2E 模式 CLI 入口（支持 .env + 多 provider failover）。"""
+    import os
+    import tempfile
+
+    from groundedrag.llm.failover import FailoverLLM
+    from groundedrag.llm.openai_compat import OpenAICompatibleLLM
+
+    # 1. 加载 .env（不覆盖已有环境变量）
+    _load_dotenv()
+
+    # 2. Provider 预设（base_url / model 默认值）
+    _PRESETS: Dict[str, Dict[str, str]] = {
+        "xiaomi": {
+            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+            "model": "mimo-v2.5-pro",
+            "key_env": "XIAOMI_API_KEY",
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+            "key_env": "DEEPSEEK_API_KEY",
+        },
+        "doubao": {
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "model": "doubao-seed-2-0-pro",
+            "key_env": "DOUBAO_API_KEY",
+        },
+    }
+
+    # 3. 确定主 provider
+    provider = args.llm_provider or os.getenv("LLM_PROVIDER", "deepseek")
+    if provider not in _PRESETS:
+        print(f"错误：不支持的 provider '{provider}'，可选：{', '.join(_PRESETS)}")
+        return 1
+    preset = _PRESETS[provider]
+
+    # 4. 解析配置（CLI > 统一 env > provider-specific > preset 默认值）
+    unified_key = args.llm_api_key or os.getenv("LLM_API_KEY")
+    unified_url = args.llm_base_url or os.getenv("LLM_BASE_URL")
+    unified_model = args.llm_model or os.getenv("LLM_MODEL")
+
+    primary_key = unified_key or os.getenv(preset["key_env"], "")
+    primary_url = unified_url or preset["base_url"]
+    primary_model = unified_model or preset["model"]
+
+    if not primary_key:
+        print(f"错误：未找到 API Key。请配置以下任一方式：")
+        print(f"  1. .env 文件：LLM_API_KEY=sk-xxx 或 {preset['key_env']}=sk-xxx")
+        print(f"  2. 环境变量：export LLM_API_KEY=sk-xxx")
+        print(f"  3. 命令行：  --llm-api-key sk-xxx")
+        return 1
+
+    # 5. 构建 primary + fallback services
+    services = []
+    primary = OpenAICompatibleLLM(
+        base_url=primary_url,
+        api_key=primary_key,
+        model=primary_model,
+    )
+    services.append(primary)
+    print(f"主模型：{provider} / {primary_model}")
+
+    # 其他 provider 作为 fallback
+    for fb_name, fb_preset in _PRESETS.items():
+        if fb_name == provider:
+            continue
+        fb_key = unified_key or os.getenv(fb_preset["key_env"], "")
+        if not fb_key:
+            continue
+        fb_url = unified_url or fb_preset["base_url"]
+        fb_model = unified_model or fb_preset["model"]
+        fb_svc = OpenAICompatibleLLM(
+            base_url=fb_url,
+            api_key=fb_key,
+            model=fb_model,
+        )
+        if fb_svc.is_available():
+            services.append(fb_svc)
+            print(f"备用模型：{fb_name} / {fb_model}")
+
+    llm = FailoverLLM(services=services)
+    pipeline = Pipeline.build_from_json(args.docs, args.rules, llm=llm)
+
+    # 6. 加载 eval set
+    cases = load_eval_set(args.eval)
+    if args.e2e_max > 0:
+        cases = cases[: args.e2e_max]
+
+    expected: Dict[int, str] = {}
+    for i, case in enumerate(cases):
+        ev = case.get("expected_verdicts")
+        if ev:
+            expected[i] = ev
+
+    eval_path = args.eval
+    if args.e2e_max > 0:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonl", delete=False, prefix="e2e_subset_"
+        )
+        for case in cases:
+            tmp.write(json.dumps(case, ensure_ascii=False) + "\n")
+        tmp.close()
+        eval_path = tmp.name
+
+    report = run_e2e(eval_path, pipeline.ask, expected_verdicts=expected or None)
+
+    if eval_path != args.eval:
+        os.unlink(eval_path)
+
+    if args.json:
+        print(json.dumps(report.summary_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(report.render())
+    return 0
+
+
+def _load_dotenv(path: str = ".env") -> None:
+    """轻量 .env 加载器（不覆盖已有环境变量，零依赖）。"""
+    import os
+
+    p = os.path.join(os.getcwd(), path)
+    if not os.path.isfile(p):
+        return
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
 
 
 if __name__ == "__main__":
