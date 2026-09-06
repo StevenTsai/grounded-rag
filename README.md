@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/StevenTsai/grounded-rag)
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-214%20passed-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
 [![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
@@ -61,10 +61,19 @@ pipe = Pipeline.build_from_json("examples/seed_docs.jsonl",
                                 "examples/seed_rules.json", llm=llm)
 ```
 
-## Benchmarks
+Or configure via `.env` (supports multi-provider failover):
 
 ```bash
-python -m groundedrag.eval.runner --json
+cp .env.example .env
+# edit .env — set LLM_API_KEY or provider-specific keys (DEEPSEEK_API_KEY, etc.)
+```
+
+## Benchmarks
+
+### Verify Mode (deterministic gate, no LLM needed)
+
+```bash
+python -m groundedrag.eval --json
 ```
 
 Built-in reproducible benchmark: **19 cases, 24 claims** (positive, numerical hallucination, relational rejection, evidence-side negation flip, type-reporting bypass, rule conflict).
@@ -85,6 +94,15 @@ Built-in reproducible benchmark: **19 cases, 24 claims** (positive, numerical ha
 
 See [docs/comparison.md](docs/comparison.md) for methodology and case studies.
 
+### E2E Mode (full RAG pipeline with LLM)
+
+```bash
+cp .env.example .env   # configure API key
+python -m groundedrag.eval --e2e
+```
+
+End-to-end evaluation: retrieval → LLM generation → claim parsing → verifier gate. Supports multiple LLM providers with automatic failover (xiaomi / deepseek / doubao). See [src/groundedrag/eval/README.md](src/groundedrag/eval/README.md) for details.
+
 ## Architecture
 
 ![GroundedRAG Architecture](docs/architecture.svg)
@@ -101,7 +119,7 @@ pipeline.py orchestration: Retrieval → Rule Matching → Constrained Generatio
 - **`retriever/`**: BM25 (jieba tokenization; falls back to **CJK char-bigram** when jieba is missing, never raw `split()`) + entity enhancement + query expansion. Domain synonym dictionaries are injectable.
 - **`guardrail/`** (★ core differentiator): Pure Python rule engine (no ORM), EvidenceId traceability, AnswerClaim parsing, verifier gate (citation → surface consistency → conflict arbitration → sufficiency).
 - **`llm/`**: `LLMService` strategy base + OpenAI-compatible native HTTP client (zero SDK) + template fallback + failover.
-- **`eval/`**: Built-in benchmark runner, outputs three metrics.
+- **`eval/`**: Built-in benchmark runner (verify mode + e2e mode), multi-provider LLM config via `.env`.
 - **`pipeline.py`**: Orchestration (`Pipeline.build_from_json(...).ask(...)`).
 
 ## What Makes This Different
@@ -126,12 +144,13 @@ grounded-rag/
 │   ├── retriever/      # bm25.py + retriever.py
 │   ├── guardrail/      # models/engine/provider/evidence/claims/verifier ★
 │   ├── llm/            # base/openai_compat/template/failover
-│   ├── eval/runner.py  # Benchmark runner
+│   ├── eval/           # Benchmark runner (verify + e2e modes)
 │   └── pipeline.py     # Trustworthy QA orchestration
-├── examples/           # Synthetic seed data + demo.py + app.py
+├── examples/           # Seed data, eval sets, demo.py, app.py
 ├── tests/              # pytest unit tests
 ├── tools/leak_scan.py  # Open source compliance scanner
-└── docs/               # Metrics / comparison / architecture
+├── docs/               # Metrics / comparison / architecture
+└── .env.example        # LLM provider configuration template
 ```
 
 ## Roadmap

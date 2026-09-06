@@ -10,7 +10,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,demo]"
 pytest                    # 测试
 ruff check                # lint（配置见 pyproject.toml，规则集 E4/E7/E9/F/I/W）
-python -m groundedrag.eval.runner   # 评测三指标
+python -m groundedrag.eval           # 评测（verify 模式）
+python -m groundedrag.eval --e2e     # 端到端评测（需 .env 配置 LLM）
 python tools/leak_scan.py # 开源合规自检（push 前必跑）
 ```
 
@@ -30,7 +31,7 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
 | `src/groundedrag/guardrail/` | 规则引擎 / EvidenceId 溯源 / AnswerClaim 解析 / **verifier 校验门** | 校验门必须纯确定性、零 LLM 依赖；不 import ORM/数据库 |
 | `src/groundedrag/llm/` | 策略基类 / OpenAI 兼容客户端 / 模板回退 / 主备降级 | 降级链保证"永不因模型故障抛给用户" |
 | `src/groundedrag/pipeline.py` | 编排 | 无 API Key 也必须可跑（规则直出 / 结构化拒答） |
-| `src/groundedrag/eval/` | 三指标评测 | 指标口径见 docs/metrics.md，不得改称"真实支持率" |
+| `src/groundedrag/eval/` | 评测（verify + e2e 两种模式） | 指标口径见 docs/metrics.md，不得改称"真实支持率" |
 | `examples/` | 自研合成演示数据 + demo | **禁止放入真实临床/患者/第三方受版权数据** |
 | `tools/` | 合规与工具 | `leak_scan.py` 内不写具体私有词，词表走 `.leak_markers.json` |
 
@@ -39,7 +40,7 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
 开源仓库出现在公网前，以下任何一项不满足都不应 push：
 
 1. [ ] `pytest` 全绿；`ruff check` 无告警。
-2. [ ] `python -m groundedrag.eval.runner --json` 三指标为预期值（1.0 / 高值）。
+2. [ ] `python -m groundedrag.eval --json` 三指标为预期值（1.0 / 高值）。
 3. [ ] `python tools/leak_scan.py` 退出码 0。
 4. [ ] 若有疑似参考的**内部文档/草稿**，先跑 `tools/leak_scan.py --refs <内部目录> --threshold 0.5`
        核对相似度 —— **改写≠清库**，高度相似段落不要进开源仓库。
@@ -63,7 +64,6 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
 
 ## 维护者须知（仅仓库维护者）
 
-本项目面向 2026 上海开源软件应用创新大赛参赛而开源。开源仓库**独立成篇**：
-机制与代码自洽、合成演示数据自足、不携带任何未授权内容。若你在维护另一处内部
-项目/数据，切勿以任何形式（含 git 历史、issue、文档链接）将内部代码、数据或
-未公开材料带入本开源仓库 —— `git log` 同样是公网可见内容。
+本仓库面向公网开源，**独立成篇**：机制与代码自洽、合成演示数据自足、不携带任何
+未授权内容。若你在维护另一处内部项目/数据，切勿以任何形式（含 git 历史、issue、
+文档链接）将内部代码、数据或未公开材料带入本开源仓库 —— `git log` 同样是公网可见内容。

@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-214%20passed-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
 [![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
@@ -41,7 +41,7 @@ AnswerClaim[]  ──引用──▶  EvidenceId[]  /  RuleDecision[]
 ```bash
 pip install -e ".[demo]"     # 或最小安装 pip install -e .
 python examples/demo.py      # CLI 端到端 demo
-python examples/app.py       # Gradio 可视化 demo（评审演示主界面）
+python examples/app.py       # Gradio 可视化 demo
 ```
 
 无 API Key 也能跑通全链路：规则命中走"规则直出"（有据可答），未命中则结构化拒答。
@@ -68,11 +68,20 @@ pipe = Pipeline.build_from_json("examples/seed_docs.jsonl",
                                 "examples/seed_rules.json", llm=llm)
 ```
 
-## 评测（三项指标）
+也可通过 `.env` 文件配置（支持多 provider 自动 failover）：
 
 ```bash
-python -m groundedrag.eval.runner                  # 读 examples/ 默认三文件
-python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
+cp .env.example .env
+# 编辑 .env —— 填入 LLM_API_KEY 或 provider 专属 key（DEEPSEEK_API_KEY 等）
+```
+
+## 评测
+
+### Verify 模式（确定性校验门，无需 LLM）
+
+```bash
+python -m groundedrag.eval                  # 读 examples/ 默认三文件
+python -m groundedrag.eval --json           # 只输出 JSON 摘要
 ```
 
 内置可重复评测集 `examples/eval_set.jsonl`（19 组 24 条，含正例、数值幻觉、关系型反例、
@@ -93,8 +102,18 @@ python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 | 误拒（好主张被拦） | —（无拒答概念） | 0（10/10 通过） |
 | 引用锚点 / 可溯源 | 无 | 每条主张 `[证据n]` / `[规则n]` + `EvidenceId` |
 
-> 数值由 `python -m groundedrag.eval.runner --json` 实测生成，随评测集演化同步更新。
+> 数值由 `python -m groundedrag.eval --json` 实测生成，随评测集演化同步更新。
 > 完整对照方法论、典型案例与诚实边界见 [docs/comparison.md](docs/comparison.md)。
+
+### E2E 端到端模式（完整 RAG 流程 + LLM）
+
+```bash
+cp .env.example .env   # 配置 API Key
+python -m groundedrag.eval --e2e
+```
+
+端到端评测：检索 → LLM 生成 → 声明解析 → 校验门验证。支持多 provider 自动 failover
+（xiaomi / deepseek / doubao）。详见 [src/groundedrag/eval/README.md](src/groundedrag/eval/README.md)。
 
 ## 架构
 
@@ -114,7 +133,7 @@ pipeline.py 编排：检索 → 规则匹配 → 受约束生成 → 声明解�
 - `guardrail/`（★ 核心差异化）：纯 Python 规则引擎（无 ORM，可替换业务侧数据库 Provider）、
   EvidenceId 溯源、AnswerClaim 解析、verifier 校验门（引用完整性 / 表面一致 / 冲突裁定 / 充分性）。
 - `llm/`：`LLMService` 策略基类 + OpenAI 兼容原生 HTTP 客户端（零 SDK）+ 模板回退 + 主备降级。
-- `eval/`：内置评测集跑分，输出三项指标。
+- `eval/`：内置评测集跑分（verify + e2e 两种模式），支持 `.env` 多 provider 配置。
 - `pipeline.py`：编排流水线（`Pipeline.build_from_json(...).ask(...)`）。
 
 ## 目录
@@ -125,12 +144,13 @@ grounded-rag/
 │   ├── retriever/      # bm25.py + retriever.py
 │   ├── guardrail/      # models/engine/provider/evidence/claims/verifier ★
 │   ├── llm/            # base/openai_compat/template/failover
-│   ├── eval/runner.py  # 三项指标评测
+│   ├── eval/           # 评测（verify + e2e 两种模式）
 │   └── pipeline.py     # 可信问答编排
-├── examples/           # 合成种子数据 + demo.py + app.py
+├── examples/           # 种子数据、评测集、demo.py、app.py
 ├── tests/              # pytest 单测
-├── tools/leak_scan.py  # 开源合规自检（扫描仓库内是否混入受限/私有内容）
-└── docs/               # 指标口径 / 对照实验 / 架构设计
+├── tools/leak_scan.py  # 开源自检工具
+├── docs/               # 指标口径 / 对照实验 / 架构设计
+└── .env.example        # LLM provider 配置模板
 ```
 
 ## Roadmap
