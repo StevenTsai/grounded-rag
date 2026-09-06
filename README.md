@@ -102,7 +102,7 @@ Built-in reproducible benchmark: **19 cases, 24 claims** (positive, numerical ha
 
 | Comparison (same hallucination-prone questions) | Naive Prompt RAG | GroundedRAG |
 |------|------|------|
-| Refusal accuracy (hallucination catch) | ≈ 0 (always answers) | **1.0** (12/12 caught) |
+| Refusal accuracy (hallucination catch) | model-dependent, non-reproducible (see [live control](docs/control_experiment_live.md)) | **1.0** (12/12 caught) |
 | False refusal (good claims blocked) | — (no refusal concept) | 0 (10/10 passed) |
 | Citation / traceability | None | Every claim has `[evidence_n]` / `[rule_n]` anchors |
 

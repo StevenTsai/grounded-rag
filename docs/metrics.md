@@ -77,10 +77,11 @@ python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 用 `baseline_questions()` 导出问题清单（每项带 `expect_refusal`），让裸模型逐题作答
 "会/不会拒答"，再用 `score_baseline()` 打两组分数：
 
-- `refusal_expected_caught`：期望拒答（幻觉高危题）中被拦截的比例 —— 对照组通常 **≈0**，
-  因为它"有资料就直出"，从不会拒答；
-- `false_refusal`：不该拒答却被拒的比例 —— 对照实验方法论与预期数值见
-  [comparison.md](comparison.md)。
+- `refusal_expected_caught`：期望拒答（幻觉高危题）中被拦截的比例 —— 对照组裸模型**没有
+  机制保证**（理想化离线口径才假设其"从不拒答"即 ≈0）；真实行为随模型/提示不可复现：
+  同题同料 8 次采样，缺据缓解率 3 次直出资料外数值。实录见
+  [control_experiment_live.md](control_experiment_live.md)。
+- `false_refusal`：不该拒答却被拒的比例 —— 对照实验方法论见 [comparison.md](comparison.md)。
 
 ## 指标演进计划
 
