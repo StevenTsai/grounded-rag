@@ -171,10 +171,10 @@ grounded-rag/
 
 ## Roadmap
 
-- **v1.1 (2026 Q4)** — Semantic tier: NLI model integration, relational claim verification
-- **v1.2 (2027 Q1)** — OncoKG: knowledge graph evidence chain, entity-relation-level traceability
-- **v1.3 (2027 Q2)** — Multi-LLM alignment: consensus voting, self-consistency verifier
-- **v2.0 (2027 Q3)** — Multi-domain: finance/legal/education rule DSL + plugin system
+- **v1.1 (2026 Q4)** — Finance/legal domain adaptation + real-world evaluation
+- **v1.2 (2027 Q1)** — Enterprise: private rule library hosting + audit logs + multi-tenant
+- **v1.3 (2027 Q2)** — Optional semantic layer: NLI model for relational claims (negation/comparison), works on top of deterministic verification
+- **v2.0 (2027 Q3)** — Multi-domain plugin system: one-click switch between medical/finance/legal rule sets
 
 ## Acknowledgements
 
