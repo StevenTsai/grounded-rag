@@ -506,12 +506,19 @@ class Pipeline:
         else:
             raw, used_name = "", None
 
-        claims = parse_claims(
-            raw,
-            evidence_ids=info["evidence_ids"],
-            rule_ids=info["rule_ids"],
-        )
-        claims = self._drop_template_claims(claims)
+        # 模板拒答检测：LLM 超时/失败时 FailoverLLM 回退到 TemplateLLM，
+        # 返回 REFUSAL_TEMPLATE。此时 parse_claims 会从模板文本中提取伪主张，
+        # 这些伪主张既无法通过 verifier 校验，又会阻止 rule-direct fallback
+        # （`if not claims` 条件不满足）。直接置空，让 rule-direct 接管。
+        if raw and any(raw.strip().startswith(p) for p in _TEMPLATE_HEADS):
+            claims = []
+        else:
+            claims = parse_claims(
+                raw,
+                evidence_ids=info["evidence_ids"],
+                rule_ids=info["rule_ids"],
+            )
+            claims = self._drop_template_claims(claims)
 
         # 确定性锚点绑定：LLM 未输出 [证据N]/[规则N] 时，尝试把裸主张绑定到
         # 检索证据 / 匹配规则。未绑定的主张被丢弃（verifier 也会拒）。
