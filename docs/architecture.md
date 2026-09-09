@@ -323,7 +323,7 @@ bm25 = BM25(corpus, tokenizer=my_tokenizer)
 
 ## 测试策略
 
-- **单元测试**（199 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
+- **单元测试**（236 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
 - **端到端测试**：`test_pipeline.py`（规则直出 + 分歧拒答 + LLM 结构化）
 - **评测集回归**：`test_eval_runner.py`（三指标 ≥ 0.95）
 - **合规扫描**：`test_leak_scan.py`（专利草稿 / 凭据泄漏自检）

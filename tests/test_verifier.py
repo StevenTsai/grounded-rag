@@ -371,7 +371,8 @@ class TestAntiCrossEvidenceStitch:
     """
 
     def test_number_and_entity_must_share_one_evidence(self):
-        # 药物实体只在 e-plan、剂量数值只在 e-dose → 谁都救不了对方 → number_mismatch
+        # 药物实体只在 e-plan、剂量数值只在 e-dose → 谁都救不了对方
+        # 数字匹配但实体不匹配 → entity_mismatch（防跨证据拼装）
         verifier = Verifier()
         e_plan = ev("e-plan", "肺癌三线EGFR复发患者推荐方案为阿帕替尼。")
         e_dose = ev("e-dose", "本品给药剂量为80mg每日一次，口服。")
@@ -383,7 +384,7 @@ class TestAntiCrossEvidenceStitch:
         rep = verifier.verify([c], EvidenceRegistry([e_plan, e_dose]))
         v = rep.verdicts[0]
         assert v.status == REFUSE
-        assert v.reason == "number_mismatch"
+        assert v.reason == "entity_mismatch"
 
     def test_grade_stitch_irrelevant_high_grade_cannot_prop(self):
         # 充分性只认锚定证据：弱证据（D 级）供字面，无关 A 级证据不能给它凑等级门槛

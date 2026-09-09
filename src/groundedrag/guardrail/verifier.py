@@ -345,7 +345,7 @@ class Verifier:
             if claim_nums and not num_ok_any:
                 reason = "number_mismatch"
             elif claim_nums:
-                reason = "number_mismatch"  # 数字命中了，但与实体不在同一条证据（跨证据拼装）
+                reason = "entity_mismatch"  # 数字匹配但实体 token 不足（非跨证据拼装）
             elif entity_toks:
                 reason = "entity_mismatch"
             else:

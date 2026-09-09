@@ -3,9 +3,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen.svg)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen.svg)](docs/metrics.md)
-[![CI](https://github.com/groundedrag/groundedrag/actions/workflows/ci.yml/badge.svg)](https://github.com/groundedrag/groundedrag/actions)
+[![Tests](https://img.shields.io/badge/tests-236%20passed-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](docs/metrics.md)
+[![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
 **轻量开源 RAG 框架** —— 以「声明级校验门（claim-level verifier）」可复现地减少无证据输出，
 让 LLM 回答做到「**有据可依，无据可拒**」。
@@ -40,14 +40,19 @@ AnswerClaim[]  ──引用──▶  EvidenceId[]  /  RuleDecision[]
 
 ```bash
 pip install -e ".[demo]"     # 或最小安装 pip install -e .
-python examples/demo.py      # CLI 端到端 demo
-python examples/app.py       # Gradio 可视化 demo（评审演示主界面）
 ```
 
-无 API Key 也能跑通全链路：规则命中走"规则直出"（有据可答），未命中则结构化拒答。
+**方式一：命令行（最简单）**
+
+```bash
+groundedrag ask "EGFR突变肺癌一线推荐什么方案？"
+groundedrag init --dir my_domain/               # 生成 docs + rules 模板
+```
+
+**方式二：Python API**
 
 ```python
-from groundedrag.pipeline import Pipeline
+from groundedrag import Pipeline
 
 pipe = Pipeline.build_from_json(
     "examples/seed_docs.jsonl", "examples/seed_rules.json"
@@ -56,6 +61,15 @@ result = pipe.ask("EGFR 突变的晚期肺癌一线推荐什么方案？")
 print(result.answer_text)
 # - 肺癌 一线 EGFR 推荐方案：奥希替尼
 ```
+
+**方式三：可视化 Demo**
+
+```bash
+python examples/demo.py      # CLI 端到端 demo
+python examples/app.py       # Gradio 可视化 demo
+```
+
+无 API Key 也能跑通全链路：规则命中走"规则直出"（有据可答），未命中则结构化拒答。
 
 启用真实 LLM（OpenAI 兼容端点，如 DeepSeek / 小米 MiMo / 豆包）：
 
@@ -68,11 +82,20 @@ pipe = Pipeline.build_from_json("examples/seed_docs.jsonl",
                                 "examples/seed_rules.json", llm=llm)
 ```
 
-## 评测（三项指标）
+也可通过 `.env` 文件配置（支持多 provider 自动 failover）：
 
 ```bash
-python -m groundedrag.eval.runner                  # 读 examples/ 默认三文件
-python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
+cp .env.example .env
+# 编辑 .env —— 填入 LLM_API_KEY 或 provider 专属 key（DEEPSEEK_API_KEY 等）
+```
+
+## 评测
+
+### Verify 模式（确定性校验门，无需 LLM）
+
+```bash
+python -m groundedrag.eval                  # 读 examples/ 默认三文件
+python -m groundedrag.eval --json           # 只输出 JSON 摘要
 ```
 
 内置可重复评测集 `examples/eval_set.jsonl`（19 组 24 条，含正例、数值幻觉、关系型反例、
@@ -89,12 +112,22 @@ python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 
 | 对照（同一批幻觉高危题） | 裸 prompt RAG | GroundedRAG |
 |------|------|------|
-| 拒答正确率（幻觉拦截） | ≈ 0（有资料就直出，从不拒答） | **1.0**（12/12 全部拦截） |
+| 拒答正确率（幻觉拦截） | 随模型不可复现（缺据数值 8 采样 3 次直出，见[实录](docs/control_experiment_live.md)） | **1.0**（12/12 全部拦截） |
 | 误拒（好主张被拦） | —（无拒答概念） | 0（10/10 通过） |
 | 引用锚点 / 可溯源 | 无 | 每条主张 `[证据n]` / `[规则n]` + `EvidenceId` |
 
-> 数值由 `python -m groundedrag.eval.runner --json` 实测生成，随评测集演化同步更新。
+> 数值由 `python -m groundedrag.eval --json` 实测生成，随评测集演化同步更新。
 > 完整对照方法论、典型案例与诚实边界见 [docs/comparison.md](docs/comparison.md)。
+
+### E2E 端到端模式（完整 RAG 流程 + LLM）
+
+```bash
+cp .env.example .env   # 配置 API Key
+python -m groundedrag.eval --e2e
+```
+
+端到端评测：检索 → LLM 生成 → 声明解析 → 校验门验证。支持多 provider 自动 failover
+（xiaomi / deepseek / doubao）。详见 [src/groundedrag/eval/README.md](src/groundedrag/eval/README.md)。
 
 ## 架构
 
@@ -114,8 +147,9 @@ pipeline.py 编排：检索 → 规则匹配 → 受约束生成 → 声明解�
 - `guardrail/`（★ 核心差异化）：纯 Python 规则引擎（无 ORM，可替换业务侧数据库 Provider）、
   EvidenceId 溯源、AnswerClaim 解析、verifier 校验门（引用完整性 / 表面一致 / 冲突裁定 / 充分性）。
 - `llm/`：`LLMService` 策略基类 + OpenAI 兼容原生 HTTP 客户端（零 SDK）+ 模板回退 + 主备降级。
-- `eval/`：内置评测集跑分，输出三项指标。
+- `eval/`：内置评测集跑分（verify + e2e 两种模式），支持 `.env` 多 provider 配置。
 - `pipeline.py`：编排流水线（`Pipeline.build_from_json(...).ask(...)`）。
+- `cli.py`：命令行工具（`groundedrag ask / init`）。
 
 ## 目录
 
@@ -125,42 +159,41 @@ grounded-rag/
 │   ├── retriever/      # bm25.py + retriever.py
 │   ├── guardrail/      # models/engine/provider/evidence/claims/verifier ★
 │   ├── llm/            # base/openai_compat/template/failover
-│   ├── eval/runner.py  # 三项指标评测
+│   ├── eval/           # 评测（verify + e2e 两种模式）
+│   ├── cli.py          # 命令行工具（groundedrag ask / init）
 │   └── pipeline.py     # 可信问答编排
-├── examples/           # 合成种子数据 + demo.py + app.py
+├── examples/           # 种子数据、评测集、demo.py、app.py
 ├── tests/              # pytest 单测
-├── tools/leak_scan.py  # 开源合规自检（扫描仓库内是否混入受限/私有内容）
-└── docs/               # 指标口径 / 对照实验 / 架构设计
+├── tools/leak_scan.py  # 开源自检工具
+├── docs/               # 指标口径 / 对照实验 / 架构设计 / 领域适配指南
+└── .env.example        # LLM provider 配置模板
 ```
 
 ## Roadmap
 
-### v1.1（2026 Q4）— 语义档增强
+### v1.1（2026 Q4）— 金融/法律领域适配
 
-- [ ] 接入 NLI 模型（deberta-mnli / bge-reranker）实现真实蕴含判定
-- [ ] 关系型主张（否定/比较/因果）从"拒答"升级为"语义校验通过"
+- [ ] 金融监管规则库接入 + 真实场景评测
+- [ ] 法律法规库接入 + 法条引用溯源
+- [ ] 领域无关的规则 DSL 设计
+
+### v1.2（2027 Q1）— 企业版
+
+- [ ] 私有规则库托管 + 审计日志
+- [ ] 多租户支持
+- [ ] SSO 集成
+
+### v1.3（2027 Q2）— 语义增强层（可选）
+
+- [ ] 在确定性校验之上，可选接入 NLI 模型处理关系型主张（否定/比较/因果）
+- [ ] NLI 结果仅作参考，不替代确定性校验的最终判定
 - [ ] 表面一致率 → 语义支持率指标升级
-- [ ] 可选语义档开关，兼容确定性档（医疗等高风险场景保留保守拒答策略）
 
-### v1.2（2027 Q1）— OncoKG 图谱证据链
+### v2.0（2027 Q3）— 多领域插件系统
 
-- [ ] 独立 `GraphProvider` 接口 + 图数据标准格式（节点/边 schema）
-- [ ] 知识图谱路径推理增强证据链路（实体-关系-实体多跳溯源）
-- [ ] 证据溯源从文档级升级为实体-关系级（`EvidenceId` 扩展 `entity_path` 字段）
-- [ ] 图谱可视化工具（证据链路交互式探索）
-
-### v1.3（2027 Q2）— 多 LLM 对齐验证
-
-- [ ] 多模型并行生成 + 主张级 consensus voting（3 模型各自生成 → 逐条投票 → 分歧标注）
-- [ ] 自洽性校验门（Self-Consistency Verifier）：同一问题多次采样 → 高方差主张降级
-- [ ] LLM-as-judge 可选增强（GPT-4 / Claude 作第三方裁判）
-
-### v2.0（2027 Q3）— 多领域泛化
-
-- [ ] 金融/法律/教育垂直领域适配（规则 DSL + 领域无关引擎）
-- [ ] 社区贡献的领域规则库生态（公开规则仓库 + 贡献者认证）
-- [ ] 领域插件系统（一键切换医疗/金融/法律规则集 + 词典 + 评测集）
-- [ ] 企业版：私有规则库托管 + 审计日志 + SSO
+- [ ] 一键切换医疗/金融/法律规则集 + 词典 + 评测集
+- [ ] 社区贡献的领域规则库生态
+- [ ] 领域无关的规则 DSL
 
 ### 长期愿景
 
@@ -173,8 +206,21 @@ grounded-rag/
 ## 参考应用
 
 GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
-参考应用线上运行见 https://onco.ylkang.cn/（旧问答管线，未含声明级校验门）；本框架将校验门机制
+参考应用线上运行见 https://onco.ylkang.cn；本框架将校验门机制
 独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
+
+## 领域适配
+
+GroundedRAG 的校验门是领域无关的——只需准备**证据文档**和**规则库**即可适配新领域：
+
+```bash
+groundedrag init --dir my_domain/               # 生成模板
+# 编辑 my_domain/my_seed_docs.jsonl             # 填入你的文档
+# 编辑 my_domain/my_seed_rules.json             # 填入你的规则
+groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_domain/my_seed_rules.json
+```
+
+完整指南见 [docs/domain_guide.md](docs/domain_guide.md)（含金融/法律示例）。
 
 ## 合规与第三方依赖
 
@@ -198,3 +244,5 @@ GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,
 ## License
 
 MIT © 2026 GroundedRAG Contributors。见 [LICENSE](LICENSE)。
+
+**[English Documentation](README.md)**

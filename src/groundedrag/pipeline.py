@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
@@ -26,6 +27,7 @@ from groundedrag.guardrail.claims import (
     TYPE_INDICATION,
     AnswerClaim,
     parse_claims,
+    surface_tokens,
 )
 from groundedrag.guardrail.evidence import (
     EvidenceId,
@@ -343,6 +345,104 @@ class Pipeline:
         return out
 
     # ------------------------------------------------------------------
+    # 确定性锚点绑定（LLM 未输出 [证据N]/[规则N] 时的回退匹配）
+    # ------------------------------------------------------------------
+    _ENUM_RE = re.compile(r"^\d+\s*[.)、]\s*")
+
+    @staticmethod
+    def _bind_anchors(
+        claims: List[AnswerClaim],
+        evidences: Sequence[EvidenceId],
+        evidence_ids: Sequence[str],
+        matched: Sequence[RuleDecision],
+    ) -> List[AnswerClaim]:
+        """把无锚点主张尝试绑定到检索证据 / 匹配规则，返回有锚主张列表。
+
+        确定性绑定（字符串匹配 + token 交叉），不依赖 LLM / NLI。
+        未绑定的主张被丢弃——它们没有可溯源锚点，verifier 也会拒。
+        """
+        if not claims:
+            return []
+
+        def _has_anchor(c: AnswerClaim) -> bool:
+            return bool(c.evidence_refs or c.rule_refs)
+
+        # 已有锚点的主张直接保留
+        anchored: List[AnswerClaim] = []
+        unanchored: List[AnswerClaim] = []
+        for c in claims:
+            if _has_anchor(c):
+                anchored.append(c)
+            else:
+                unanchored.append(c)
+        if not unanchored:
+            return anchored
+
+        # 枚举前缀剥离（"1. xxx" → "xxx"），防止 "1" 被 _extract_numbers
+        # 当作有意义数值导致 number_mismatch 误拒。
+        def _clean(text: str) -> str:
+            return Pipeline._ENUM_RE.sub("", text).strip()
+
+        # --- 证据绑定 ---
+        for c in unanchored:
+            best_id, best_score = None, 0
+            c_text = _clean(c.text)
+            c_toks = set(surface_tokens(c_text))
+            for ev in evidences:
+                score = 0
+                span = ev.text_span
+                if c_text in span:
+                    score += 5
+                for tok in c_toks:
+                    if len(tok) >= 2 and tok in span:
+                        score += 2
+                if len(c_toks & set(surface_tokens(span))) >= 2:
+                    score += 1
+                if score > best_score:
+                    best_score = score
+                    best_id = ev.evidence_id
+            if best_id and best_score >= 4:
+                c.evidence_refs = [best_id]
+                anchored.append(c)
+
+        # --- 规则绑定（仍无锚点的主张） ---
+        still_unanchored = [c for c in unanchored if not _has_anchor(c)]
+        for c in still_unanchored:
+            best_id, best_hits = None, 0
+            c_text = _clean(c.text)
+            for dec in matched:
+                hits = 0
+                for field_val in (
+                    dec.cancer_type or "",
+                    dec.treatment_line or "",
+                    dec.biomarker or "",
+                ):
+                    if field_val and field_val in c_text:
+                        hits += 1
+                for rec in dec.recommendations:
+                    if rec.plan_name and rec.plan_name in c_text:
+                        hits += 2  # 方案名是高信号匹配
+                if hits > best_hits:
+                    best_hits = hits
+                    best_id = dec.rule_id
+            if best_id and best_hits >= 2:
+                c.rule_refs = [best_id]
+                anchored.append(c)
+
+        # 剥离 LLM 输出的枚举前缀（"1. xxx" → "xxx"），防止 "1"/"2" 等被
+        # _extract_numbers 当作有意义数值，导致 number_mismatch 误拒。
+        # 只处理本轮绑定的主张（unanchored → anchored），不影响已有锚点的主张。
+        unanchored_ids = {id(c) for c in unanchored}
+        for c in anchored:
+            if id(c) not in unanchored_ids:
+                continue
+            cleaned = Pipeline._ENUM_RE.sub("", c.text).strip()
+            if cleaned and cleaned != c.text:
+                c.text = cleaned
+
+        return anchored
+
+    # ------------------------------------------------------------------
     # 回答组装
     # ------------------------------------------------------------------
     @staticmethod
@@ -406,14 +506,28 @@ class Pipeline:
         else:
             raw, used_name = "", None
 
-        claims = parse_claims(
-            raw,
-            evidence_ids=info["evidence_ids"],
-            rule_ids=info["rule_ids"],
-        )
-        claims = self._drop_template_claims(claims)
+        # 模板拒答检测：LLM 超时/失败时 FailoverLLM 回退到 TemplateLLM，
+        # 返回 REFUSAL_TEMPLATE。此时 parse_claims 会从模板文本中提取伪主张，
+        # 这些伪主张既无法通过 verifier 校验，又会阻止 rule-direct fallback
+        # （`if not claims` 条件不满足）。直接置空，让 rule-direct 接管。
+        if raw and any(raw.strip().startswith(p) for p in _TEMPLATE_HEADS):
+            claims = []
+        else:
+            claims = parse_claims(
+                raw,
+                evidence_ids=info["evidence_ids"],
+                rule_ids=info["rule_ids"],
+            )
+            claims = self._drop_template_claims(claims)
 
-        # LLM 未产出有效主张：有命中规则 → 规则直出；否则交给 verifier 判无据拒答。
+        # 确定性锚点绑定：LLM 未输出 [证据N]/[规则N] 时，尝试把裸主张绑定到
+        # 检索证据 / 匹配规则。未绑定的主张被丢弃（verifier 也会拒）。
+        claims = self._bind_anchors(
+            claims, evidences, info["evidence_ids"], matched
+        )
+
+        # 无有锚主张 + 有命中规则 → 规则直出（规则合成的主张自带锚点）；
+        # 否则交给 verifier 判无据拒答。
         note = ""
         if not claims and matched and rule_fallback:
             syn_claims, notes = self._claims_from_winners(matched)
