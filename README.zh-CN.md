@@ -205,8 +205,8 @@ grounded-rag/
 
 ## 参考应用
 
-GroundedRAG 由医疗数据平台 **onco-hub** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
-参考应用线上运行见 https://onco.ylkang.cn
+GroundedRAG 由医疗数据平台 **壹鹿康行** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
+壹鹿康行数据平台网址： https://onco.ylkang.cn
 本框架将校验门机制独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
 
 ## 领域适配
