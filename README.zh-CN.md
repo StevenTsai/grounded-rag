@@ -233,6 +233,7 @@ groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_do
 - **GitHub 镜像**: https://github.com/StevenTsai/grounded-rag
 - **Gitee 主仓库**: https://gitee.com/miniclaw27/grounded-rag
 - **反馈与讨论**: [GitHub Issues](https://github.com/StevenTsai/grounded-rag/issues) | [Gitee Issues](https://gitee.com/miniclaw27/grounded-rag/issues)
+- **技术博客**: 核心设计决策系列 [docs/blog.md](docs/blog.md)
 - **贡献者**: 见 [CONTRIBUTING.md](CONTRIBUTING.md)
 
 欢迎贡献代码、规则库、评测用例或新领域适配！特别欢迎：
