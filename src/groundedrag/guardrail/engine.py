@@ -26,6 +26,8 @@ from groundedrag.guardrail.models import (
 _LINE_KEYWORDS = tuple(LINE_ALIASES)
 # 耐药 / 进展语境词：命中说明问的是"前序方案失败后"而非"初始该线次"
 _PROGRESSION_TERMS = ("耐药", "进展", "继发", "复发", "后线", "失败后")
+# 医疗领域的四个内置字段（其余条件域走通用兜底提取，见 extract_context）
+_MEDICAL_FIELDS = ("cancer_type", "biomarker", "gene", "treatment_line")
 # biomarker/gene 后缀 → 中文极性词的对应（用于"RAS 野生型"这类问题命中 "RAS-WT" 候选）
 _POLARITY_BY_SUFFIX = {
     "-WT": ("野生", "野生型"),
@@ -211,18 +213,29 @@ class GuidelineEngine:
                 if isinstance(val, str) and val and val not in candidates[field]:
                     candidates[field].append(val)
             for cond in rule.conditions:
-                if cond.field in candidates:
-                    val = cond.value
-                    if isinstance(val, (list, tuple)) and val:
-                        val = val[0]
-                    if isinstance(val, str) and val and val not in candidates[cond.field]:
-                        candidates[cond.field].append(val)
+                val = cond.value
+                if isinstance(val, (list, tuple)) and val:
+                    val = val[0]
+                if isinstance(val, str) and val:
+                    # 未知领域字段（如金融的 fund_type）也纳入候选，走通用兜底提取
+                    pool = candidates.setdefault(cond.field, [])
+                    if val not in pool:
+                        pool.append(val)
 
         # 3) 别名表
         synonyms: Dict[str, str] = {}
         for canonical, aliases in (synonym_map or {}).items():
             for alias in aliases:
                 synonyms[alias] = canonical
+
+        # 3.5) 非医疗字段的通用兜底：候选词是否出现在问题中（子串 / 别名 / token）
+        # 让金融/法律等领域无需改框架即可命中规则（医疗四字段仍走下方专用逻辑）。
+        for field, cands in candidates.items():
+            if field in _MEDICAL_FIELDS or not cands:
+                continue
+            picked = _pick_candidate(cands, synonyms, q)
+            if picked:
+                context[field] = picked
 
         progressed = any(t in q for t in _PROGRESSION_TERMS)
         gene = _pick_candidate(candidates["gene"], synonyms, q)

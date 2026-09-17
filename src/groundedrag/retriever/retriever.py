@@ -18,7 +18,7 @@ class Document:
     """检索文档（承载后续证据归一所需的 EvidenceId 元数据字段）。
 
     字段语义对齐 `guardrail.evidence.EvidenceId`：
-    source_type ∈ guideline|clinical_trial|insurance|variant|generic；
+    source_type ∈ 见 `VALID_SOURCE_TYPES`（医疗/金融/法律等，generic 兜底）；
     grade ∈ A/B/C/D；updated_at 为 ISO 日期。
     """
 

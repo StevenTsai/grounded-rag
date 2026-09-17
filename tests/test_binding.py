@@ -7,7 +7,6 @@ from groundedrag.guardrail.evidence import EvidenceId
 from groundedrag.guardrail.models import RuleDecision, RuleRecommendation
 from groundedrag.pipeline import Pipeline
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------

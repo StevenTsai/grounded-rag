@@ -1,0 +1,3 @@
+{"question": "EGFR突变的晚期肺癌一线推荐什么方案？", "context": {"cancer_type": "肺癌", "treatment_line": "一线", "biomarker": "EGFR"}, "evidence_docs": ["doc-lung-egfr-1st-pos"], "claims": [{"text": "奥希替尼推荐剂量80mg每日一次", "expect_bind": "evidence"}, {"text": "1. 奥希替尼口服给药剂量为80mg", "expect_bind": "evidence"}]}
+{"question": "这个情况推荐什么方案？", "context": {"cancer_type": "肺癌", "treatment_line": "一线", "biomarker": "ALK"}, "evidence_docs": ["doc-gastric-her2-pos"], "claims": [{"text": "推荐方案：阿来替尼", "expect_bind": "rule"}]}
+{"question": "EGFR突变的晚期肺癌一线推荐什么方案？", "context": {"cancer_type": "肺癌", "treatment_line": "一线", "biomarker": "EGFR"}, "evidence_docs": ["doc-lung-egfr-1st-pos"], "claims": [{"text": "该新药可将五年生存率提升至百分之九十", "expect_bind": "none"}, {"text": "某种未经证实的新药可完全治愈肺癌", "expect_bind": "none"}]}
