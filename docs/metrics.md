@@ -97,6 +97,25 @@ python -m groundedrag.eval.runner --json           # 只输出 JSON 摘要
 
 每个版本的指标定义与实现细节见对应分支的 `eval/runner.py` 与本文档更新版。
 
+## 锚点绑定评测（离线回归）
+
+E2E 里"LLM 不吐 `[证据N]`/`[规则N]` 锚点"是匹配率的主要损耗项，且真实 LLM 行为不可复现。
+为此提供 **binding 模式**：对一组"无锚点裸主张 + 应绑定来源"用例，直接跑确定性锚点绑定器
+（`Pipeline._bind_anchors`），离线、零 LLM、可进 CI：
+
+```bash
+python -m groundedrag.eval --binding
+python -m groundedrag.eval --binding --json
+```
+
+| 指标 | 含义 |
+|------|------|
+| `bind_rate` | 裸主张中成功绑定（证据/规则）的占比 —— 越高说明越少因缺锚被拒 |
+| `bind_accuracy` | 绑定结果与期望来源（evidence/rule/none）一致的占比 |
+
+E2E 运行侧同时输出 `anchor_binding_rate`（主张最终带可解析锚点的占比），
+用于持续跟踪"LLM 锚点协议遵从度"这一上游 gap 的收敛。
+
 ## 常见问题
 
 **Q1: 为什么评测不走真实 LLM？**  
