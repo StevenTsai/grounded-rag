@@ -178,7 +178,7 @@ grounded-rag/
 
 ## Acknowledgements
 
-GroundedRAG evolved from the production practice of the **onco-hub** medical data platform (47,000+ medical records + CSCO guideline rules). The framework is open-sourced with synthetic demo data (`examples/`) for any vertical domain to reuse.
+GroundedRAG evolved from the production practice of the **壹鹿康行** medical data platform (47,000+ medical records + CSCO guideline rules). The framework is open-sourced with synthetic demo data (`examples/`) for any vertical domain to reuse.
 
 ## Domain Adaptation
 

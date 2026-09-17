@@ -55,7 +55,7 @@ python -m groundedrag.eval --e2e --llm-api-key sk-xxx
 
 ### 多模型 Failover
 
-参考 onco-hub 的多 provider 架构，支持主备自动切换：
+参考壹鹿康行的多 provider 架构，支持主备自动切换：
 
 | Provider | 环境变量 | 默认 Base URL | 默认模型 |
 |----------|---------|--------------|---------|
@@ -119,5 +119,5 @@ python -m groundedrag.eval --e2e --json
 | 文件 | 模式 | 用例数 | 说明 |
 |------|------|--------|------|
 | eval_set.jsonl | verify | 19 | 内置合成数据 |
-| real_eval_set.jsonl | verify | 15 | 真实场景（onco-hub 数据） |
+| real_eval_set.jsonl | verify | 15 | 真实场景（壹鹿康行数据） |
 | e2e_eval_set.jsonl | e2e | 13 | 端到端（需 LLM） |
