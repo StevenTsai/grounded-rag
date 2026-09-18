@@ -126,4 +126,12 @@ cp .env.example .env    # 配置 API Key（支持多 provider 自动降级）
   2. 合并到 master，确认 CI 全绿
   3. 打 tag（`git tag -a vX.Y.Z -m "..."`）并推送两个远程
   4. 创建 GitHub / Gitee Release，附 wheel 与 release notes
-  5. （可选）发布 PyPI：`python -m build && twine upload dist/*`
+  5. （可选）发布 PyPI：
+     ```bash
+     pip install build twine
+     python -m build
+     python -m twine check dist/*
+     python -m twine upload dist/*    # 用户名填 __token__，密码填 PyPI API token（勿写入脚本/仓库）
+     ```
+     发布后用 `pip install groundedrag` 即可安装（推荐约束 `groundedrag>=1,<2`）；
+     随后把 README / 本文档的安装示例切换到 PyPI 写法。
