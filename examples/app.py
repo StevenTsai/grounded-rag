@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Gradio 可视化 demo —— ★评审演示主界面（设计文档 §3.6）。
+"""Gradio 可视化 demo —— ★交互演示主界面（设计文档 §3.6）。
 
 特性：
 - **逐条主张面板**：每条主张一张卡 —— ✅ 有据可依（引用完整 + 锚点）/
   ✗ 无据拒答（展示保守拒答文案与原因）/ 🟡 标注降级；规则命中显示 RuleDecision + 证据等级。
 - **裸 RAG 对照开关**：同一问题切换「GroundedRAG 可信模式 / 裸 RAG 对照」，
-  直观展示"无校验门直出"与"逐条校验后降级/拒答"的差异（评审视频 90 秒核心镜头）。
+  直观展示"无校验门直出"与"逐条校验后降级/拒答"的差异（90 秒核心演示镜头）。
 - **检索来源面板**：召回的文档/证据/命中规则可展开，呼应"有据可依、有源可溯"。
 - **eval 用例点选**：内置 ``eval_set.jsonl`` 题目一键换题，demo 可重复、可复现。
 
@@ -401,7 +401,7 @@ def _sources_html(result: PipelineResult) -> str:
 # 裸模式回答文本（供对照组入口复用）
 # ---------------------------------------------------------------------------
 def main() -> int:
-    # 演示/评审现场常无外网：关闭 gradio 的遥测与 HF Hub 在线拉取，避免 import 挂起。
+    # 演示/离线环境常无外网：关闭 gradio 的遥测与 HF Hub 在线拉取，避免 import 挂起。
     os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     try:

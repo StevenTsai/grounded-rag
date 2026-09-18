@@ -209,7 +209,7 @@ def classify_claim_type(text: str) -> str:
 
 ### D2: 表面要素一致性 ≠ 真实支持
 
-**问题**：用户/评委可能误读"一致性检查"为"验证了语义正确性"。
+**问题**：用户可能误读"一致性检查"为"验证了语义正确性"。
 
 **方案**：
 1. **明确命名** —— `_check_surface_consistency`（不叫 `_check_support`）
@@ -251,7 +251,7 @@ def _is_conflict(r1: RuleDecision, r2: RuleDecision) -> bool:
 
 ### D4: 无 LLM 可演示（规则直出 + 模板回退）
 
-**问题**：评审现场/演示视频录制时，可能无外网或 API Key 过期。
+**问题**：离线演示时，可能无外网或 API Key 过期。
 
 **方案**：
 - **规则命中** → `pipeline.py` 直接拼装答案（无需 LLM），标记 `used_llm=None` + `reason=rule_authoritative`
