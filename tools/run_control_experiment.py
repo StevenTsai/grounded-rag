@@ -26,6 +26,9 @@
 ``--prompt strict`` 显式约束"资料中缺失的内容不得自行补充"，用于观察对齐强度。
 
 密钥：只读仓库根 ``.env``（与 cli 相同），绝不打印密钥；无 key 时仅跑确定性侧。
+
+数据：``examples/real_seed_docs.jsonl`` / ``real_seed_rules.json`` 含第三方指南
+内容，不入库、不随仓库分发；运行前请自备。
 """
 
 from __future__ import annotations
@@ -161,10 +164,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     cli._load_dotenv()  # noqa: SLF001 —— tools 复用内部加载器，与 cli 同源
     llm = cli._build_llm()
 
-    pipe = Pipeline.build_from_json(
-        ROOT / "examples" / "real_seed_docs.jsonl",
-        ROOT / "examples" / "real_seed_rules.json",
-    )
+    docs_path = ROOT / "examples" / "real_seed_docs.jsonl"
+    rules_path = ROOT / "examples" / "real_seed_rules.json"
+    if not docs_path.exists() or not rules_path.exists():
+        print(
+            "缺少真实评测数据：examples/real_seed_docs.jsonl / real_seed_rules.json\n"
+            "该数据含第三方指南内容，不入库、不随仓库分发，请自备后重试。",
+            file=sys.stderr,
+        )
+        return 2
+
+    pipe = Pipeline.build_from_json(docs_path, rules_path)
 
     out_lines: List[Dict[str, Any]] = []
     for i, case in enumerate(_load_cases(args.all), 1):

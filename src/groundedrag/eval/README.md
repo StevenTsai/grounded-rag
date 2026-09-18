@@ -10,7 +10,7 @@
 # 内置 eval set
 python -m groundedrag.eval
 
-# 真实场景 eval set
+# 真实场景 eval set（真实数据不入库，需本地自备 examples/real_seed_*.jsonl）
 python -m groundedrag.eval --docs examples/real_seed_docs.jsonl \
   --rules examples/real_seed_rules.json \
   --eval examples/real_eval_set.jsonl
@@ -150,6 +150,6 @@ python -m groundedrag.eval --binding --json
 | 文件 | 模式 | 用例数 | 说明 |
 |------|------|--------|------|
 | eval_set.jsonl | verify | 19 | 内置合成数据 |
-| real_eval_set.jsonl | verify | 15 | 真实场景（公开指南整理，来源见 THIRD_PARTY_NOTICES.md §5） |
+| real_eval_set.jsonl | verify | 15 | 真实场景（依赖的真实数据不入库，需自备） |
 | e2e_eval_set.jsonl | e2e | 13 | 端到端（需 LLM） |
 | binding_eval_set.jsonl | binding | 3 | 锚点绑定（离线，无需 LLM） |
