@@ -1,0 +1,15 @@
+{
+  "_comment": "把本文件复制为 .leak_markers.json（已被 .gitignore 忽略）后填写自家私有词。仓库内只保留此模板 —— 私有词绝不入库。",
+  "terms": [
+    "内部产品代号",
+    "客户公司全名"
+  ],
+  "patterns": [
+    "PRIVATE-PROJECT-[A-Z]{2,}",
+    "https?://[a-z0-9.-]+\\.internal"
+  ],
+  "paths": [
+    "internal/",
+    "confidential_"
+  ]
+}
