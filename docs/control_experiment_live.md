@@ -4,7 +4,7 @@
 > 把"裸 RAG 会怎样、GroundedRAG 会怎样"录下来。数字是录的，不是假设的。
 
 **录制时间**：2026-09-07　**模型**：xiaomi / mimo-v2.5-pro（OpenAI 兼容协议，`temperature≈0.3`）
-**证据库**：`examples/real_seed_docs.jsonl`（694 条真实医疗资料）　**规则库**：`examples/real_seed_rules.json`
+**证据库**：`examples/real_seed_docs.jsonl`（694 条真实医疗资料，来源见 [THIRD_PARTY_NOTICES.md §5](../THIRD_PARTY_NOTICES.md#5-数据声明与来源标注)）　**规则库**：`examples/real_seed_rules.json`
 
 ## 一、先给诚实结论（不夸大）
 

@@ -150,6 +150,6 @@ python -m groundedrag.eval --binding --json
 | 文件 | 模式 | 用例数 | 说明 |
 |------|------|--------|------|
 | eval_set.jsonl | verify | 19 | 内置合成数据 |
-| real_eval_set.jsonl | verify | 15 | 真实场景（壹鹿康行数据） |
+| real_eval_set.jsonl | verify | 15 | 真实场景（公开指南整理，来源见 THIRD_PARTY_NOTICES.md §5） |
 | e2e_eval_set.jsonl | e2e | 13 | 端到端（需 LLM） |
 | binding_eval_set.jsonl | binding | 3 | 锚点绑定（离线，无需 LLM） |

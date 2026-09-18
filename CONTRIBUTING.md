@@ -32,7 +32,7 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
 | `src/groundedrag/llm/` | 策略基类 / OpenAI 兼容客户端 / 模板回退 / 主备降级 | 降级链保证"永不因模型故障抛给用户" |
 | `src/groundedrag/pipeline.py` | 编排 | 无 API Key 也必须可跑（规则直出 / 结构化拒答） |
 | `src/groundedrag/eval/` | 评测（verify + e2e 两种模式） | 指标口径见 docs/metrics.md，不得改称"真实支持率" |
-| `examples/` | 自研合成演示数据 + demo | **禁止放入真实临床/患者/第三方受版权数据** |
+| `examples/` | 合成演示数据 + 公开指南整理的评测集（来源见 THIRD_PARTY_NOTICES §5） | **禁止真实患者隐私数据；新增第三方内容必须标注来源并经合规审查** |
 | `tools/` | 合规与工具 | `leak_scan.py` 内不写具体私有词，词表走 `.leak_markers.json` |
 
 ## 提交前检查清单（compliance）
@@ -46,8 +46,9 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
        核对相似度 —— **改写≠清库**，高度相似段落不要进开源仓库。
 5. [ ] 维护方如有私有词（内部代号/客户名/未公开术语），写入**不入库**的
        `.leak_markers.json`（模板见 `.leak_markers.example.json`）后再跑一次 scan。
-6. [ ] 演示数据只增不减地自检：新 `examples/` 条目应为**自研合成**，不含真实病例/
-       指南原文/受版权数据；新增依赖先核对许可证并更新 THIRD_PARTY_NOTICES.md。
+6. [ ] 数据合规：新 `examples/` 条目默认应为**自研合成**；如需加入公开指南/文献
+        整理的真实评测数据，必须标注来源与版本（`source_version`）并同步
+        THIRD_PARTY_NOTICES.md §5；禁止真实患者隐私数据。新增依赖先核对许可证。
 7. [ ] 涉及行为语义的改动，同步 README / docs 中对应口径说明与示例。
 
 ## 分支与 PR
@@ -64,6 +65,6 @@ python tools/leak_scan.py # 开源合规自检（push 前必跑）
 
 ## 维护者须知（仅仓库维护者）
 
-本仓库面向公网开源，**独立成篇**：机制与代码自洽、合成演示数据自足、不携带任何
+本仓库面向公网开源，**独立成篇**：机制与代码自洽、合成演示数据 + 已标注来源的公开指南评测集、不携带任何
 未授权内容。若你在维护另一处内部项目/数据，切勿以任何形式（含 git 历史、issue、
 文档链接）将内部代码、数据或未公开材料带入本开源仓库 —— `git log` 同样是公网可见内容。
