@@ -11,74 +11,29 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from typing import Optional, Sequence
 
 
 def _load_dotenv(path: str = ".env") -> None:
-    """轻量 .env 加载器（不覆盖已有环境变量，零依赖）。"""
-    import re
+    """轻量 .env 加载器（委托 llm.providers，保持 CLI 内可调用）。"""
+    from groundedrag.llm.providers import load_dotenv
 
-    p = os.path.join(os.getcwd(), path)
-    if not os.path.isfile(p):
-        return
-    with open(p, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = re.sub(r"\s+#.*$", "", value).strip()
-            value = value.strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
+    load_dotenv(path)
 
 
 def _build_llm(provider: Optional[str] = None):
-    """从 .env / 环境变量构造 LLM（无 key 返回 None）。"""
-    from groundedrag.llm.failover import FailoverLLM
-    from groundedrag.llm.openai_compat import OpenAICompatibleLLM
+    """从 .env / 环境变量构造 LLM（无 key / 未知 provider 返回 None）。"""
+    from groundedrag.llm.providers import PROVIDER_PRESETS, build_failover, resolve_provider
 
-    _PRESETS = {
-        "xiaomi": {
-            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
-            "model": "mimo-v2.5-pro",
-            "key_env": "XIAOMI_API_KEY",
-        },
-        "deepseek": {
-            "base_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat",
-            "key_env": "DEEPSEEK_API_KEY",
-        },
-        "doubao": {
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "model": "doubao-seed-2-0-pro",
-            "key_env": "DOUBAO_API_KEY",
-        },
-    }
-
-    prov = provider or os.getenv("LLM_PROVIDER", "deepseek")
-    if prov not in _PRESETS:
-        print(f"不支持的 provider: {prov}，可选: {', '.join(_PRESETS)}", file=sys.stderr)
+    prov = resolve_provider(provider)
+    if prov not in PROVIDER_PRESETS:
+        print(
+            f"不支持的 provider: {prov}，可选: {', '.join(PROVIDER_PRESETS)}",
+            file=sys.stderr,
+        )
         return None
-
-    preset = _PRESETS[prov]
-    api_key = os.getenv("LLM_API_KEY") or os.getenv(preset["key_env"], "")
-    if not api_key:
-        return None
-
-    base_url = os.getenv("LLM_BASE_URL") or preset["base_url"]
-    model = os.getenv("LLM_MODEL") or preset["model"]
-
-    return FailoverLLM(
-        services=[
-            OpenAICompatibleLLM(base_url=base_url, api_key=api_key, model=model),
-        ],
-    )
+    return build_failover(prov)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

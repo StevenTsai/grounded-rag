@@ -21,7 +21,7 @@ keywords = [
     "trust",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -58,9 +58,11 @@ dev = [
 groundedrag = "groundedrag.cli:main"
 
 [project.urls]
+# 主站为 Gitee；GitHub 为镜像（CI/Release 见 .github/workflows）。
 Homepage = "https://gitee.com/miniclaw27/grounded-rag"
 Repository = "https://gitee.com/miniclaw27/grounded-rag"
 BugTracker = "https://gitee.com/miniclaw27/grounded-rag/issues"
+GitHub = "https://github.com/StevenTsai/grounded-rag"
 
 [tool.setuptools.packages.find]
 where = ["src"]

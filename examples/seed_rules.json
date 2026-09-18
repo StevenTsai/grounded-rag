@@ -1,0 +1,175 @@
+{
+  "_comment": "GroundedRAG 合成示例规则（自研虚构，不构成真实诊疗建议）。structure: pathway_rules + resistance_rules。字段语义见 src/groundedrag/guardrail/models.py。",
+  "pathway_rules": [
+    {
+      "rule_id": "r-lung-egfr-1st",
+      "name": "肺癌 EGFR 突变一线治疗",
+      "cancer_type": "肺癌",
+      "treatment_line": "一线",
+      "biomarker": "EGFR",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "biomarker", "op": "eq", "value": "EGFR" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "奥希替尼", "grade": "A", "note": "标准一线，80mg 每日1次", "source_version": "CSCO-LUNG-2026" }
+      ],
+      "source_version": "CSCO-LUNG-2026",
+      "updated_at": "2026-02-01"
+    },
+    {
+      "rule_id": "r-lung-egfr-t790m-2nd",
+      "name": "肺癌 EGFR T790M 二线治疗",
+      "cancer_type": "肺癌",
+      "treatment_line": "二线",
+      "biomarker": "EGFR-T790M",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "biomarker", "op": "eq", "value": "EGFR-T790M" },
+        { "field": "treatment_line", "op": "eq", "value": "二线" }
+      ],
+      "recommendations": [
+        { "plan_name": "奥希替尼", "grade": "A", "note": "T790M 阳性二线标准", "source_version": "CSCO-LUNG-2026" }
+      ],
+      "source_version": "CSCO-LUNG-2026",
+      "updated_at": "2026-02-01"
+    },
+    {
+      "rule_id": "r-lung-alk-1st",
+      "name": "肺癌 ALK 融合一线治疗",
+      "cancer_type": "肺癌",
+      "treatment_line": "一线",
+      "biomarker": "ALK",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "biomarker", "op": "eq", "value": "ALK" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "阿来替尼", "grade": "A", "note": "ALK 一线首选", "source_version": "CSCO-LUNG-2026" }
+      ],
+      "source_version": "CSCO-LUNG-2026",
+      "updated_at": "2026-02-05"
+    },
+    {
+      "rule_id": "r-breast-her2-1st",
+      "name": "乳腺癌 HER2 阳性一线治疗",
+      "cancer_type": "乳腺癌",
+      "treatment_line": "一线",
+      "biomarker": "HER2",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "乳腺癌" },
+        { "field": "biomarker", "op": "eq", "value": "HER2" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "曲妥珠单抗联合帕妥珠单抗联合化疗", "grade": "A", "note": "双靶 + 紫杉类", "source_version": "CSCO-BREAST-2026" }
+      ],
+      "source_version": "CSCO-BREAST-2026",
+      "updated_at": "2026-01-20"
+    },
+    {
+      "rule_id": "r-colo-ras-wt-1st",
+      "name": "结直肠癌 RAS 野生型一线治疗",
+      "cancer_type": "结直肠癌",
+      "treatment_line": "一线",
+      "biomarker": "RAS-WT",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "结直肠癌" },
+        { "field": "biomarker", "op": "eq", "value": "RAS-WT" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "西妥昔单抗联合化疗", "grade": "A", "note": "RAS 野生型一线", "source_version": "CSCO-CRC-2026" }
+      ],
+      "source_version": "CSCO-CRC-2026",
+      "updated_at": "2026-01-10"
+    },
+    {
+      "rule_id": "r-colo-ras-mut-1st",
+      "name": "结直肠癌 RAS 突变一线治疗",
+      "cancer_type": "结直肠癌",
+      "treatment_line": "一线",
+      "biomarker": "RAS-MT",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "结直肠癌" },
+        { "field": "biomarker", "op": "eq", "value": "RAS-MT" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "贝伐珠单抗联合化疗", "grade": "A", "note": "RAS 突变一线选贝伐", "source_version": "CSCO-CRC-2026" }
+      ],
+      "source_version": "CSCO-CRC-2026",
+      "updated_at": "2026-01-12"
+    },
+    {
+      "rule_id": "r-gastric-her2-1st",
+      "name": "胃癌 HER2 阳性一线治疗",
+      "cancer_type": "胃癌",
+      "treatment_line": "一线",
+      "biomarker": "HER2",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "胃癌" },
+        { "field": "biomarker", "op": "eq", "value": "HER2" },
+        { "field": "treatment_line", "op": "eq", "value": "一线" }
+      ],
+      "recommendations": [
+        { "plan_name": "曲妥珠单抗联合化疗", "grade": "A", "note": "HER2 阳性胃癌一线", "source_version": "CSCO-GAST-2026" }
+      ],
+      "source_version": "CSCO-GAST-2026",
+      "updated_at": "2026-01-25"
+    },
+    {
+      "rule_id": "r-lung-egfr-div-3rd-a",
+      "name": "肺癌 EGFR 三线治疗（分歧场景 A）",
+      "cancer_type": "肺癌",
+      "treatment_line": "三线",
+      "biomarker": "EGFR",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "biomarker", "op": "eq", "value": "EGFR" },
+        { "field": "treatment_line", "op": "eq", "value": "三线" }
+      ],
+      "recommendations": [
+        { "plan_name": "甲磺酸阿帕替尼", "grade": "C", "note": "分歧场景合成示例", "source_version": "SYN-DIV-2026" }
+      ],
+      "source_version": "SYN-DIV-2026",
+      "updated_at": "2026-01-01"
+    },
+    {
+      "rule_id": "r-lung-egfr-div-3rd-b",
+      "name": "肺癌 EGFR 三线治疗（分歧场景 B）",
+      "cancer_type": "肺癌",
+      "treatment_line": "三线",
+      "biomarker": "EGFR",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "biomarker", "op": "eq", "value": "EGFR" },
+        { "field": "treatment_line", "op": "eq", "value": "三线" }
+      ],
+      "recommendations": [
+        { "plan_name": "安罗替尼", "grade": "C", "note": "分歧场景合成示例", "source_version": "SYN-DIV-2026" }
+      ],
+      "source_version": "SYN-DIV-2026",
+      "updated_at": "2026-01-01"
+    }
+  ],
+  "resistance_rules": [
+    {
+      "rule_id": "rr-lung-egfr-t790m",
+      "name": "EGFR-TKI 一线进展后 T790M 检测耐药",
+      "gene": "EGFR-T790M",
+      "prior_regimen": "一代EGFR-TKI",
+      "conditions": [
+        { "field": "cancer_type", "op": "eq", "value": "肺癌" },
+        { "field": "gene", "op": "eq", "value": "EGFR-T790M" }
+      ],
+      "recommendations": [
+        { "plan_name": "奥希替尼", "grade": "A", "note": "T790M 阳性耐药后更换三代 TKI", "source_version": "CSCO-LUNG-2026" }
+      ],
+      "source_version": "CSCO-LUNG-2026",
+      "updated_at": "2026-02-01"
+    }
+  ]
+}

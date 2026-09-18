@@ -15,7 +15,19 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 from groundedrag.guardrail.models import GRADE_ORDER, VALID_GRADES
 from groundedrag.retriever.retriever import RetrievedDocument
 
-VALID_SOURCE_TYPES = ("guideline", "clinical_trial", "insurance", "variant", "generic")
+# 领域无关来源类型：医疗（guideline/clinical_trial/variant）之外的金融/法律等
+# 领域使用 regulation（法规）/ literature（文献）/ manual（手册）；generic 为兜底。
+# 决定 schema 完整性判定与默认时效年限，见 StalenessPolicy.DEFAULT_YEARS。
+VALID_SOURCE_TYPES = (
+    "guideline",
+    "clinical_trial",
+    "insurance",
+    "variant",
+    "regulation",
+    "literature",
+    "manual",
+    "generic",
+)
 
 
 @dataclass
@@ -24,7 +36,7 @@ class EvidenceId:
 
     evidence_id: str          # 全局唯一
     doc_id: str               # 召回文档 id
-    source_type: str          # guideline | clinical_trial | insurance | variant | generic
+    source_type: str          # 取值见 VALID_SOURCE_TYPES（含 regulation/literature/manual/generic）
     source_version: str       # 来源版本；缺失视为未知版本
     grade: str                # A/B/C/D
     updated_at: Optional[str]  # ISO 日期；缺失视为无时间信息
@@ -111,6 +123,9 @@ class StalenessPolicy:
         "clinical_trial": 5,
         "insurance": 5,
         "variant": 5,
+        "regulation": 5,
+        "literature": 5,
+        "manual": 5,
         "generic": 5,
     }
 

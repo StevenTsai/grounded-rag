@@ -10,7 +10,7 @@
 # 内置 eval set
 python -m groundedrag.eval
 
-# 真实场景 eval set
+# 真实场景 eval set（真实数据不入库，需本地自备 examples/real_seed_*.jsonl）
 python -m groundedrag.eval --docs examples/real_seed_docs.jsonl \
   --rules examples/real_seed_rules.json \
   --eval examples/real_eval_set.jsonl
@@ -93,10 +93,14 @@ python -m groundedrag.eval --e2e --json
 | 指标 | 含义 |
 |------|------|
 | match_rate | actual_status == expected_status 的比例 |
+| anchor_binding_rate | 主张中最终带可解析锚点（reason ≠ citation_incomplete）的占比 |
 | llm_usage_rate | 有 LLM 参与的比例（非规则直出） |
 | rule_direct_rate | 规则直出比例 |
 | verdict_distribution | PASS / REFUSE / ANNOTATE 各占比 |
 | avg_latency_ms | 平均耗时 |
+
+> `anchor_binding_rate` 直接度量"LLM 是否按约束吐锚点"：绑定率低说明大量主张因缺锚被拒、
+> 匹配率被拖低。E2E 需 API Key 且行为不可复现，故另见下方**锚点绑定模式**做离线回归。
 
 ### E2E Eval Set 格式
 
@@ -114,10 +118,38 @@ python -m groundedrag.eval --e2e --json
 - `evidence_docs`: 固定证据 ID（空 = 自动检索）
 - 无手写 claims：LLM 自己生成主张，校验门自动验证
 
+## 3. 锚点绑定模式（确定性、无需 LLM）
+
+对一组"无锚点裸主张 + 应绑定来源"用例，直接跑确定性锚点绑定器
+（`Pipeline._bind_anchors`），度量绑定率 / 绑定准确率。把 E2E 里
+"LLM 不吐锚点"这一不可复现问题转成可回归的离线指标：
+
+```bash
+python -m groundedrag.eval --binding
+python -m groundedrag.eval --binding --json
+```
+
+| 指标 | 含义 |
+|------|------|
+| bind_rate | 裸主张中成功绑定（证据 / 规则）的占比 |
+| bind_accuracy | 绑定结果与期望来源（evidence / rule / none）一致的占比 |
+
+用例格式（每行一个 JSON）：
+
+```json
+{"question": "EGFR突变的晚期肺癌一线推荐什么方案？",
+ "context": {"cancer_type": "肺癌", "treatment_line": "一线", "biomarker": "EGFR"},
+ "evidence_docs": ["doc-lung-egfr-1st-pos"],
+ "claims": [{"text": "奥希替尼推荐剂量80mg每日一次", "expect_bind": "evidence"}]}
+```
+
+`expect_bind ∈ {evidence, rule, none}`：分别表示应绑定到证据、命中规则、或无锚丢弃。
+
 ## Eval Sets
 
 | 文件 | 模式 | 用例数 | 说明 |
 |------|------|--------|------|
 | eval_set.jsonl | verify | 19 | 内置合成数据 |
-| real_eval_set.jsonl | verify | 15 | 真实场景（壹鹿康行数据） |
+| real_eval_set.jsonl | verify | 15 | 真实场景（依赖的真实数据不入库，需自备） |
 | e2e_eval_set.jsonl | e2e | 13 | 端到端（需 LLM） |
+| binding_eval_set.jsonl | binding | 3 | 锚点绑定（离线，无需 LLM） |

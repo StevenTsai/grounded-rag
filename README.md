@@ -2,8 +2,8 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/StevenTsai/grounded-rag)
-[![Tests](https://img.shields.io/badge/tests-236%20passed-brightgreen.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
+[![Tests](https://img.shields.io/badge/tests-247%20passed-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](docs/metrics.md)
 [![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
@@ -11,7 +11,7 @@ Lightweight open-source RAG framework with claim-level deterministic verifier �
 
 GroundedRAG is designed for high-risk domains (medical, legal, finance) where hallucination is dangerous: every answer is decomposed into atomic claims (`AnswerClaim`), each bound to traceable evidence (`EvidenceId`) or authoritative rules (`RuleDecision`), then passed through a deterministic verifier gate before deciding **PASS / ANNOTATE / REFUSE**.
 
-> ⚠️ Data in `examples/` is **synthetic** for demonstration and benchmarking only. **Not medical advice.**
+> ⚠️ Shipped demo/benchmark data in `examples/` is **synthetic**. The real-world evaluation set (`real_seed_*`) is compiled from published clinical guidelines/literature, **not distributed** (available on request for review). **Not medical advice.**
 
 ## Why "Claim-Level"?
 
@@ -178,7 +178,7 @@ grounded-rag/
 
 ## Acknowledgements
 
-GroundedRAG evolved from the production practice of the **壹鹿康行** medical data platform (47,000+ medical records + CSCO guideline rules). The framework is open-sourced with synthetic demo data (`examples/`) for any vertical domain to reuse.
+GroundedRAG evolved from the production practice of the **壹鹿康行** medical data platform (47,000+ medical records + CSCO guideline rules). The framework is open-sourced with synthetic demo data (`examples/`) for any vertical domain to reuse; the real-world evaluation set compiled from public clinical guidelines is maintained locally (not distributed).
 
 ## Domain Adaptation
 
@@ -192,6 +192,12 @@ groundedrag ask "your question" --docs my_domain/my_seed_docs.jsonl --rules my_d
 ```
 
 Full guide: [docs/domain_guide.md](docs/domain_guide.md) (includes finance/legal examples).
+
+## Community
+
+- **Gitee (primary)**: https://gitee.com/miniclaw27/grounded-rag
+- **GitHub (mirror)**: https://github.com/StevenTsai/grounded-rag
+- **Feedback**: [Gitee Issues](https://gitee.com/miniclaw27/grounded-rag/issues) | [GitHub Issues](https://github.com/StevenTsai/grounded-rag/issues)
 
 ## Contributing
 

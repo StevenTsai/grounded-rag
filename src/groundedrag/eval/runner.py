@@ -249,10 +249,26 @@ class E2EReport:
             return None
         return self.llm_used_count / self.total
 
+    @property
+    def anchor_binding_rate(self) -> Optional[float]:
+        """锚点绑定率：LLM/规则产出的主张中，最终带可解析锚点的占比。
+
+        以 ``reason == "citation_incomplete"`` 反推未绑定（该 reason 专指无引用/
+        引用无法解析）。这是 E2E 里"LLM 是否按约束吐锚点"的直接度量 ——
+        锚点绑定率低，说明大量主张因缺锚被拒，匹配率会被拖低。
+        """
+        claims = [v for r in self.results for v in r.verdicts]
+        if not claims:
+            return None
+        bound = [v for v in claims if v.get("reason") != "citation_incomplete"]
+        return len(bound) / len(claims)
+
     def summary_dict(self) -> Dict[str, Any]:
         return {
             "total": self.total,
             "match_rate": round(self.match_rate, 4) if self.match_rate is not None else None,
+            "anchor_binding_rate": round(self.anchor_binding_rate, 4)
+            if self.anchor_binding_rate is not None else None,
             "llm_usage_rate": round(self.llm_usage_rate, 4) if self.llm_usage_rate is not None else None,
             "rule_direct_rate": round(self.rule_direct_count / self.total, 4) if self.total else None,
             "verdict_distribution": self.verdict_distribution,
@@ -434,6 +450,136 @@ def run_evaluation(
 
 
 # ---------------------------------------------------------------------------
+# 锚点绑定评测（确定性、可离线、无需 LLM）
+# ---------------------------------------------------------------------------
+# binding_eval_set.jsonl 每例给出"无锚点裸主张 + 其应绑定到的来源"，用于
+# 持续度量确定性锚点绑定器（Pipeline._bind_anchors）的绑定率/准确率。
+# 它把 E2E 里"LLM 不吐锚点"这一不可复现问题，转为可回归的离线指标。
+BIND_EVIDENCE = "evidence"
+BIND_RULE = "rule"
+BIND_NONE = "none"
+
+
+@dataclass
+class BindingRow:
+    """单条裸主张的绑定结果。"""
+
+    text: str
+    expected: str
+    actual: str
+    correct: bool
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "text": self.text,
+            "expected": self.expected,
+            "actual": self.actual,
+            "correct": self.correct,
+        }
+
+
+@dataclass
+class BindingReport:
+    """锚点绑定评测汇总。"""
+
+    rows: List[BindingRow] = field(default_factory=list)
+    case_count: int = 0
+
+    @property
+    def bind_rate(self) -> Optional[float]:
+        """绑定率：裸主张中被成功绑定（证据或规则）的占比 —— 越高说明越少因缺锚被拒。"""
+        if not self.rows:
+            return None
+        return len([r for r in self.rows if r.actual != BIND_NONE]) / len(self.rows)
+
+    @property
+    def bind_accuracy(self) -> Optional[float]:
+        """绑定准确率：绑定结果与期望来源（证据/规则/不绑定）一致的占比。"""
+        if not self.rows:
+            return None
+        return len([r for r in self.rows if r.correct]) / len(self.rows)
+
+    def summary_dict(self) -> Dict[str, Any]:
+        return {
+            "bind_rate": round(self.bind_rate, 4) if self.bind_rate is not None else None,
+            "bind_accuracy": round(self.bind_accuracy, 4)
+            if self.bind_accuracy is not None else None,
+            "case_count": self.case_count,
+            "claim_count": len(self.rows),
+        }
+
+    def render(self) -> str:
+        lines = ["===== GroundedRAG 锚点绑定评测 ====="]
+        lines.append(json.dumps(self.summary_dict(), ensure_ascii=False, indent=2))
+        for r in self.rows:
+            mark = "✓" if r.correct else "✗"
+            lines.append(
+                f"  [{mark}] expected={r.expected} actual={r.actual} | {r.text}"
+            )
+        return "\n".join(lines)
+
+
+def run_binding_evaluation(
+    eval_path: Union[str, Path],
+    *,
+    pipeline: Optional[Pipeline] = None,
+    docs_path: Optional[Union[str, Path]] = None,
+    rules_path: Optional[Union[str, Path]] = None,
+    top_k: int = 5,
+) -> BindingReport:
+    """跑锚点绑定评测：对每例的裸主张调用 ``Pipeline._bind_anchors`` 并比对期望。
+
+    不调用 LLM：确定性、可离线、可进 CI（与 E2E 的真实 LLM 链路互补）。
+    """
+    from groundedrag.guardrail.claims import AnswerClaim
+
+    if pipeline is None:
+        if docs_path is None or rules_path is None:
+            raise ValueError("pipeline 与 (docs_path, rules_path) 至少给一组")
+        pipeline = Pipeline.build_from_json(docs_path, rules_path)
+
+    report = BindingReport()
+    for case in load_eval_set(eval_path):
+        report.case_count += 1
+        question = str(case.get("question", ""))
+        info = pipeline.retrieve_and_match(
+            question,
+            context=case.get("context") or None,
+            evidence_docs=case.get("evidence_docs") or None,
+            top_k=top_k,
+        )
+        items = case.get("claims") or []
+        claims = [
+            AnswerClaim(text=str(item.get("text", "")).strip())
+            for item in items
+            if isinstance(item, dict) and str(item.get("text", "")).strip()
+        ]
+        bound = pipeline._bind_anchors(  # noqa: SLF001 —— 评测直接针对该绑定器
+            claims, info["registry"].all(), info["evidence_ids"], info["matched"]
+        )
+        bound_ids = {id(c) for c in bound}
+        for item, claim in zip(items, claims):
+            if id(claim) not in bound_ids:
+                actual = BIND_NONE
+            elif claim.rule_refs:
+                actual = BIND_RULE
+            elif claim.evidence_refs:
+                actual = BIND_EVIDENCE
+            else:
+                actual = BIND_NONE
+            expected = str(item.get("expect_bind", BIND_NONE) or BIND_NONE)
+            report.rows.append(
+                BindingRow(
+                    text=claim.text,
+                    expected=expected,
+                    actual=actual,
+                    correct=(expected == actual),
+                )
+            )
+    return report
+
+
+# ---------------------------------------------------------------------------
 # 裸 prompt RAG 对照组辅助
 # ---------------------------------------------------------------------------
 def baseline_questions(eval_set: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
@@ -502,6 +648,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--json", action="store_true", help="只输出 JSON 摘要")
 
+    # 锚点绑定评测（离线、无需 LLM）
+    parser.add_argument(
+        "--binding", action="store_true", help="锚点绑定评测（确定性，无需 LLM）"
+    )
+    parser.add_argument(
+        "--binding-eval", default="examples/binding_eval_set.jsonl",
+        help="锚点绑定评测集（JSONL）",
+    )
+
     # E2E 端到端模式
     parser.add_argument("--e2e", action="store_true", help="启用 E2E 端到端评测（需 API Key）")
     parser.add_argument("--llm-provider", default=None, help="主 LLM provider：xiaomi / deepseek / doubao")
@@ -513,6 +668,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.e2e:
         return _run_e2e_cli(args)
+
+    if args.binding:
+        breport = run_binding_evaluation(
+            args.binding_eval,
+            docs_path=args.docs,
+            rules_path=args.rules,
+            top_k=args.top_k,
+        )
+        if args.json:
+            print(json.dumps(breport.summary_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(breport.render())
+        return 0
 
     report = run_evaluation(
         args.eval, docs_path=args.docs, rules_path=args.rules, top_k=args.top_k
@@ -530,82 +698,45 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
     import tempfile
 
     from groundedrag.llm.failover import FailoverLLM
-    from groundedrag.llm.openai_compat import OpenAICompatibleLLM
+    from groundedrag.llm.providers import (
+        PROVIDER_PRESETS,
+        iter_services,
+        load_dotenv,
+        resolve_provider,
+    )
 
-    # 1. 加载 .env（不覆盖已有环境变量）
-    _load_dotenv()
-
-    # 2. Provider 预设（base_url / model 默认值）
-    _PRESETS: Dict[str, Dict[str, str]] = {
-        "xiaomi": {
-            "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
-            "model": "mimo-v2.5-pro",
-            "key_env": "XIAOMI_API_KEY",
-        },
-        "deepseek": {
-            "base_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat",
-            "key_env": "DEEPSEEK_API_KEY",
-        },
-        "doubao": {
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "model": "doubao-seed-2-0-pro",
-            "key_env": "DOUBAO_API_KEY",
-        },
-    }
-
-    # 3. 确定主 provider
-    provider = args.llm_provider or os.getenv("LLM_PROVIDER", "deepseek")
-    if provider not in _PRESETS:
-        print(f"错误：不支持的 provider '{provider}'，可选：{', '.join(_PRESETS)}")
+    # 1. 加载 .env（不覆盖已有环境变量），确定主 provider
+    load_dotenv()
+    provider = resolve_provider(args.llm_provider)
+    if provider not in PROVIDER_PRESETS:
+        print(
+            f"错误：不支持的 provider '{provider}'，可选：{', '.join(PROVIDER_PRESETS)}"
+        )
         return 1
-    preset = _PRESETS[provider]
 
-    # 4. 解析配置（CLI > 统一 env > provider-specific > preset 默认值）
-    unified_key = args.llm_api_key or os.getenv("LLM_API_KEY")
-    unified_url = args.llm_base_url or os.getenv("LLM_BASE_URL")
-    unified_model = args.llm_model or os.getenv("LLM_MODEL")
+    # 2. 构建 primary + fallback（CLI > 统一 env > provider-specific > preset）
+    services = []
+    for name, svc in iter_services(
+        provider,
+        include_fallbacks=True,
+        api_key=args.llm_api_key,
+        base_url=args.llm_base_url,
+        model=args.llm_model,
+    ):
+        services.append(svc)
+        if not args.json:
+            label = "主模型" if name == provider else "备用模型"
+            print(f"{label}：{name} / {svc.model}")
 
-    primary_key = unified_key or os.getenv(preset["key_env"], "")
-    primary_url = unified_url or preset["base_url"]
-    primary_model = unified_model or preset["model"]
-
-    if not primary_key:
+    if not services:
         print("错误：未找到 API Key。请配置以下任一方式：")
-        print(f"  1. .env 文件：LLM_API_KEY=sk-xxx 或 {preset['key_env']}=sk-xxx")
+        print(
+            "  1. .env 文件：LLM_API_KEY=sk-xxx 或 "
+            f"{PROVIDER_PRESETS[provider]['key_env']}=sk-xxx"
+        )
         print("  2. 环境变量：export LLM_API_KEY=sk-xxx")
         print("  3. 命令行：  --llm-api-key sk-xxx")
         return 1
-
-    # 5. 构建 primary + fallback services
-    services = []
-    primary = OpenAICompatibleLLM(
-        base_url=primary_url,
-        api_key=primary_key,
-        model=primary_model,
-    )
-    services.append(primary)
-    if not args.json:
-        print(f"主模型：{provider} / {primary_model}")
-
-    # 其他 provider 作为 fallback
-    for fb_name, fb_preset in _PRESETS.items():
-        if fb_name == provider:
-            continue
-        fb_key = unified_key or os.getenv(fb_preset["key_env"], "")
-        if not fb_key:
-            continue
-        fb_url = unified_url or fb_preset["base_url"]
-        fb_model = unified_model or fb_preset["model"]
-        fb_svc = OpenAICompatibleLLM(
-            base_url=fb_url,
-            api_key=fb_key,
-            model=fb_model,
-        )
-        if fb_svc.is_available():
-            services.append(fb_svc)
-            if not args.json:
-                print(f"备用模型：{fb_name} / {fb_model}")
 
     llm = FailoverLLM(services=services)
     pipeline = Pipeline.build_from_json(args.docs, args.rules, llm=llm)
@@ -644,30 +775,10 @@ def _run_e2e_cli(args: argparse.Namespace) -> int:
 
 
 def _load_dotenv(path: str = ".env") -> None:
-    """轻量 .env 加载器（不覆盖已有环境变量，零依赖）。
+    """轻量 .env 加载器（委托 llm.providers，支持行内注释、不覆盖已有变量）。"""
+    from groundedrag.llm.providers import load_dotenv
 
-    支持行内注释（值后 `` # ...`` 被剥离）。
-    """
-    import os
-    import re
-
-    p = os.path.join(os.getcwd(), path)
-    if not os.path.isfile(p):
-        return
-    with open(p, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            # 去掉行内注释（空格/制表符 + # + 后续内容）
-            value = re.sub(r"\s+#.*$", "", value).strip()
-            value = value.strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
+    load_dotenv(path)
 
 
 if __name__ == "__main__":  # pragma: no cover —— python -m 入口，由集成测试覆盖

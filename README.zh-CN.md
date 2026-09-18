@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://gitee.com/miniclaw27/grounded-rag)
-[![Tests](https://img.shields.io/badge/tests-236%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-247%20passed-brightgreen.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen.svg)](docs/metrics.md)
 [![CI](https://github.com/StevenTsai/grounded-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/StevenTsai/grounded-rag/actions)
 
@@ -14,7 +14,7 @@ GroundedRAG 面向医疗等高风险领域的检索增强问答设计：回答�
 原子主张（`AnswerClaim`），每条绑定可溯源证据（`EvidenceId`）或命中的权威规则
 （`RuleDecision`），逐条经过确定性校验门后，才决定**原样输出 / 标注降级 / 拒绝回答**。
 
-> ⚠️ 本项目内数据（`examples/`）为**自研合成示例**，用于演示与评测机制，**不构成真实诊疗建议**。
+> ⚠️ 随仓库分发的 `examples/` 数据（`seed_*`、eval sets）为**自研合成示例**；真实场景评测集（`real_seed_*`）整理自公开临床指南/文献，因第三方版权**不入库、不随仓库分发**（可应评审要求提供）。以上数据均**不构成真实诊疗建议**。
 > 请勿用于任何真实医疗决策。
 
 ## 为什么是"声明级"
@@ -207,7 +207,7 @@ grounded-rag/
 
 GroundedRAG 由医疗数据平台 **壹鹿康行** 的生产实践演化而来（47,000+ 条医疗数据 + CSCO 指南规则），
 壹鹿康行数据平台网址： https://onco.ylkang.cn
-本框架将校验门机制独立开源，使用合成示例数据（`examples/`），供任何垂直领域复用。
+本框架将校验门机制独立开源，附合成示例数据（`examples/`）；真实评测集整理自公开指南、因第三方版权不入库，供任何垂直领域复用。
 
 ## 领域适配
 

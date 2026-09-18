@@ -28,7 +28,7 @@ groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_do
 | `doc_id` | ✅ | 文档唯一 ID（字符串） |
 | `content` | ✅ | 文档正文（校验门从此文本中提取实体/数值） |
 | `title` | 可选 | 文档标题 |
-| `source_type` | 可选 | 来源类型：`guideline` / `literature` / `regulation` / `manual` |
+| `source_type` | 可选 | 来源类型：`guideline` / `clinical_trial` / `insurance` / `variant` / `regulation` / `literature` / `manual` / `generic`（默认）。非法值会导致 schema 校验失败 → 主张被拒 |
 | `source_version` | 可选 | 来源版本（如 `"CSCO-LUNG-2026"`） |
 | `grade` | 可选 | 证据等级：`A` / `B` / `C` / `D` |
 | `updated_at` | 可选 | 更新日期（`YYYY-MM-DD`），用于时效性校验 |
@@ -99,24 +99,30 @@ groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_do
 
 ### 领域字段映射
 
-默认的规则引擎使用 `cancer_type` / `treatment_line` / `biomarker` 作为上下文字段（医疗领域命名）。其他领域需要覆盖上下文提取逻辑：
+规则条件使用通用的 `field / op / value`，任意字段都可直接写入规则库。上下文提取分两层：
+
+1. **医疗四字段**（`cancer_type` / `treatment_line` / `biomarker` / `gene`）走内置启发式；
+2. **其余字段**（如金融的 `fund_type`、法律的 `region`）走**通用兜底**：只要规则条件里
+   出现的取值在问题中被命中（原文子串 / 别名 / 字母数字 token 全含），即自动填入上下文。
+   因此上面金融示例的 `fund_type` 无需改框架即可命中规则。
+
+只有当内置启发式不满足需求（例如同一字段需要词形归一、上下文来自多轮对话而非问题文本）时，
+才需要继承 `GuidelineEngine` 覆盖 `extract_context`（注意是公开方法，无下划线前缀）：
 
 ```python
 from groundedrag.pipeline import Pipeline
 from groundedrag.guardrail.engine import GuidelineEngine
 
-# 自定义上下文提取
 class MyEngine(GuidelineEngine):
-    def _extract_context(self, question: str, evidence_ids=None):
-        ctx = super()._extract_context(question, evidence_ids)
-        # 从 question 中提取你领域的关键字段
-        ctx["fund_type"] = self._detect_fund_type(question)
+    def extract_context(self, question, synonym_map=None):
+        ctx = super().extract_context(question, synonym_map)
+        # 在通用兜底之上，补充你领域的专用提取 / 归一
         ctx["region"] = self._detect_region(question)
         return ctx
 
-# 使用自定义引擎
+# 构造后替换引擎（Pipeline 暴露的引擎属性名是 engine）
 pipe = Pipeline.build(docs, rules)
-pipe.guideline_engine = MyEngine(...)
+pipe.engine = MyEngine(pipe.engine.pathway_rules, pipe.engine.resistance_rules)
 ```
 
 ## 评测集格式（JSONL）
@@ -179,4 +185,7 @@ groundedrag ask "货币市场基金的期限限制是什么？" \
   --rules finance_rules.json
 ```
 
-输出：`- 货币市场基金 推荐方案：平均剩余到期期限≤120天`
+输出：`- 推荐方案：平均剩余到期期限≤120天`
+
+> 无 API Key 时走「规则直出」确定性路径；配置了 LLM（`.env`）时会先调用模型，
+> 由校验门逐条核验其输出。上例的规则命中与规则直出不依赖任何外部模型。

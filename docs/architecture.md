@@ -8,7 +8,7 @@
 2. **零 ORM 耦合** —— 规则引擎通过 `RuleProvider` 抽象接口加载规则，可对接任意数据源（JSON / 数据库 / API）。
 3. **确定性优先** —— 校验门核心逻辑（引用完整性/表面一致性/冲突裁定/充分性）纯逻辑判定，零 LLM 依赖，可离线测试。
 4. **无 LLM 可演示** —— 规则命中走"规则直出"（权威背书），未命中走结构化拒答模板；Gradio demo 无需配置 API Key 即可完整运行。
-5. **领域无关** —— 框架本身不绑定医疗，`examples/` 合成示例可替换为金融/法律/教育领域数据。
+5. **领域无关** —— 框架本身不绑定医疗，`examples/` 合成示例（真实评测集本地维护）可替换为金融/法律/教育领域数据。
 
 ---
 
@@ -209,7 +209,7 @@ def classify_claim_type(text: str) -> str:
 
 ### D2: 表面要素一致性 ≠ 真实支持
 
-**问题**：用户/评委可能误读"一致性检查"为"验证了语义正确性"。
+**问题**：用户可能误读"一致性检查"为"验证了语义正确性"。
 
 **方案**：
 1. **明确命名** —— `_check_surface_consistency`（不叫 `_check_support`）
@@ -251,7 +251,7 @@ def _is_conflict(r1: RuleDecision, r2: RuleDecision) -> bool:
 
 ### D4: 无 LLM 可演示（规则直出 + 模板回退）
 
-**问题**：评审现场/演示视频录制时，可能无外网或 API Key 过期。
+**问题**：离线演示时，可能无外网或 API Key 过期。
 
 **方案**：
 - **规则命中** → `pipeline.py` 直接拼装答案（无需 LLM），标记 `used_llm=None` + `reason=rule_authoritative`
@@ -323,7 +323,7 @@ bm25 = BM25(corpus, tokenizer=my_tokenizer)
 
 ## 测试策略
 
-- **单元测试**（236 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
+- **单元测试**（247 个，覆盖 5 档校验门全部分支）：`tests/test_*.py`
 - **端到端测试**：`test_pipeline.py`（规则直出 + 分歧拒答 + LLM 结构化）
 - **评测集回归**：`test_eval_runner.py`（三指标 ≥ 0.95）
 - **合规扫描**：`test_leak_scan.py`（专利草稿 / 凭据泄漏自检）
