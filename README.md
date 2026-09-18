@@ -82,6 +82,24 @@ cp .env.example .env
 # edit .env — set LLM_API_KEY or provider-specific keys (DEEPSEEK_API_KEY, etc.)
 ```
 
+## Integration
+
+Three adoption modes — full guide in [docs/integration.md](docs/integration.md):
+
+1. **Full pipeline** — `Pipeline.build_from_json("docs.jsonl", "rules.json").ask(...)`.
+2. **Verifier gate only** (existing RAG) — bind your retrieved evidence and LLM claims, then:
+   ```python
+   from groundedrag.guardrail import EvidenceRegistry, parse_claims, Verifier
+   report = Verifier().verify(claims, EvidenceRegistry(evidences))
+   ```
+   Runnable example: [`examples/integrate_verifier.py`](examples/integrate_verifier.py)
+3. **Individual components** — `Retriever` / `GuidelineEngine` / `FailoverLLM`.
+
+Dependency (PyPI release pending — pin a tag, never a branch):
+```bash
+pip install "groundedrag @ git+https://gitee.com/miniclaw27/grounded-rag.git@v1.0.0"
+```
+
 ## Benchmarks
 
 ### Verify Mode (deterministic gate, no LLM needed)
@@ -202,6 +220,10 @@ Full guide: [docs/domain_guide.md](docs/domain_guide.md) (includes finance/legal
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) (includes 7-point compliance checklist + red-line table).
+
+## Citation
+
+If you use GroundedRAG in research or a product, cite it via [`CITATION.cff`](CITATION.cff).
 
 ## License
 

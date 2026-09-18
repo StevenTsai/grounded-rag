@@ -89,6 +89,24 @@ cp .env.example .env
 # 编辑 .env —— 填入 LLM_API_KEY 或 provider 专属 key（DEEPSEEK_API_KEY 等）
 ```
 
+## 集成方式
+
+按需选择三种接入深度，完整指南见 [docs/integration.md](docs/integration.md)：
+
+1. **整条流水线** —— `Pipeline.build_from_json("docs.jsonl", "rules.json").ask(...)`
+2. **只挂校验门**（已有 RAG 推荐）—— 校验你自己的检索与生成结果：
+   ```python
+   from groundedrag.guardrail import EvidenceRegistry, parse_claims, Verifier
+   report = Verifier().verify(claims, EvidenceRegistry(evidences))
+   ```
+   可运行示例：[`examples/integrate_verifier.py`](examples/integrate_verifier.py)
+3. **单组件复用** —— `Retriever` / `GuidelineEngine` / `FailoverLLM`
+
+依赖引用（PyPI 尚未发布，请锁 tag、勿引用分支）：
+```bash
+pip install "groundedrag @ git+https://gitee.com/miniclaw27/grounded-rag.git@v1.0.0"
+```
+
 ## 评测
 
 ### Verify 模式（确定性校验门，无需 LLM）
@@ -241,6 +259,10 @@ groundedrag ask "你的问题" --docs my_domain/my_seed_docs.jsonl --rules my_do
 - 多语言分词器支持（英文/日文/韩文）
 - 语义档 NLI 模型集成
 - 企业级部署案例
+
+## 引用
+
+如在研究或产品中使用 GroundedRAG，请通过 [`CITATION.cff`](CITATION.cff) 引用。
 
 ## License
 

@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use GroundedRAG in your research or product, please cite this repository."
+title: "GroundedRAG: 声明级确定性校验的 RAG 可验证交付层"
+abstract: >-
+  GroundedRAG is a lightweight open-source framework that adds a deterministic,
+  claim-level verification gate to RAG pipelines. Every atomic claim is bound to
+  traceable evidence or authoritative rules and checked by pure logic (zero LLM
+  dependency), producing reproducible PASS / ANNOTATE / REFUSE decisions for
+  high-risk vertical domains such as medical, legal and finance.
+type: software
+version: 1.0.0
+date-released: 2026-09-18
+license: MIT
+repository-code: "https://gitee.com/miniclaw27/grounded-rag"
+url: "https://github.com/StevenTsai/grounded-rag"
+keywords:
+  - RAG
+  - hallucination
+  - verification
+  - guardrail
+  - reproducibility
+  - LLM
+authors:
+  - family-names: "蔡"
+    given-names: "德勋"
+    alias: "StevenTsai"
+    website: "https://gitee.com/miniclaw27"
+  - family-names: "杨"
+    given-names: "章敏"
+  - family-names: "杨"
+    given-names: "章伦"
